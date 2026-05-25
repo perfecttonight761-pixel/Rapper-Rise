@@ -1,0 +1,6 @@
+{
+  "name": "Remix: Musician Simulator",
+  "description": "A web-based musician simulation game where you climb the ranks from an unknown artist to a global superstar.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500">
+  <defs>
+    <radialGradient id="bgGrad" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
+      <stop offset="0%" stop-color="#1a1a1a"/>
+      <stop offset="100%" stop-color="#050507"/>
+    </radialGradient>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFDF00"/>
+      <stop offset="50%" stop-color="#F2C94C"/>
+      <stop offset="100%" stop-color="#F2994A"/>
+    </linearGradient>
+    <linearGradient id="textGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#cccccc"/>
+    </linearGradient>
+  </defs>
+  
+  <rect width="500" height="500" fill="url(#bgGrad)"/>
+  
+  <!-- City Skyline -->
+  <path d="M 50 350 L 50 200 L 90 200 L 90 150 L 130 150 L 130 100 L 180 100 L 180 140 L 220 140 L 220 70 L 270 70 L 270 120 L 310 120 L 310 80 L 360 80 L 360 160 L 400 160 L 400 230 L 450 230 L 450 350 Z" fill="#000000" stroke="#333333" stroke-width="2"/>
+  
+  <!-- Golden Crown Silhouette -->
+  <path d="M 120 180 L 250 50 L 380 180 L 320 280 L 180 280 Z" fill="url(#goldGrad)" opacity="0.6"/>
+  
+  <!-- Microphone Vector -->
+  <g transform="translate(250, 240) rotate(25)">
+    <!-- Base Handle -->
+    <path d="M -20 20 L 20 20 L 15 150 L -15 150 Z" fill="#333" stroke="#555" stroke-width="2"/>
+    <!-- Mic Head -->
+    <circle cx="0" cy="-20" r="45" fill="#111" stroke="#444" stroke-width="3"/>
+    <!-- Grid on mic -->
+    <path d="M -40 -35 L 40 -5 M -35 -5 L 40 -35 M -45 -20 L 45 -20 M 0 -65 L 0 25" stroke="#666" stroke-width="2"/>
+    <!-- Ring -->
+    <rect x="-25" y="15" width="50" height="10" fill="url(#goldGrad)"/>
+  </g>
+
+  <!-- Typography -->
+  <text x="250" y="360" font-family="Arial Black, Impact, sans-serif" font-size="75" font-weight="900" fill="url(#textGrad)" text-anchor="middle" stroke="#000" stroke-width="4" style="text-transform: uppercase; font-style: italic; letter-spacing: -2px;">RAPPER</text>
+  <text x="250" y="440" font-family="Arial Black, Impact, sans-serif" font-size="95" font-weight="900" fill="url(#goldGrad)" text-anchor="middle" stroke="#000" stroke-width="5" style="text-transform: uppercase; font-style: italic; letter-spacing: 2px;">RISE</text>
+  <text x="250" y="440" font-family="Arial Black, Impact, sans-serif" font-size="95" font-weight="900" fill="none" text-anchor="middle" stroke="#ffffff" stroke-width="1" style="text-transform: uppercase; font-style: italic; letter-spacing: 2px;">RISE</text>
+  
+  <!-- Splatters or accents -->
+  <circle cx="100" cy="100" r="4" fill="#FFDF00"/>
+  <circle cx="420" cy="120" r="5" fill="#ffffff"/>
+  <circle cx="80" cy="280" r="3" fill="#F2994A"/>
+  <circle cx="430" cy="320" r="6" fill="#F2C94C"/>
+  <circle cx="200" cy="70" r="2" fill="#ffffff"/>
+  <circle cx="280" cy="40" r="3" fill="#FFDF00"/>
+</svg>
