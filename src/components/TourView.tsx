@@ -36,7 +36,7 @@ export function TourView({ gameState, setGameState, currentDate }: TourViewProps
   const [showsCount, setShowsCount] = useState(1);
   const [tourError, setTourError] = useState<string | null>(null);
 
-  const availableSongs = gameState.releases.filter((r): r is Song => r.type === 'Single');
+  const availableSongs = gameState.releases.filter((r): r is Song => r.type === 'Single' && !(r as any).isNPCRelease);
 
   // Currently active tour
   const activeTour = gameState.tours?.find(t => t.id === gameState.activeTourId);
@@ -237,7 +237,7 @@ export function TourView({ gameState, setGameState, currentDate }: TourViewProps
                                 )}
                                 <div className="flex-1 truncate">
                                    <div className="text-sm font-bold text-white truncate">{s.title}</div>
-                                   <div className="text-xs text-white/50">{s.streams.total.toLocaleString()} plays</div>
+                                   <div className="text-xs text-white/50">{(s.streams?.total || 0).toLocaleString()} plays</div>
                                 </div>
                                 {isSelected && <CheckCircle className="w-5 h-5 text-purple-400" />}
                              </div>

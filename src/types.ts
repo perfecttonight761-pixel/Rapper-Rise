@@ -1,4 +1,4 @@
-export type GameScreen = 'loading' | 'home' | 'saves' | 'create' | 'dashboard' | 'studio' | 'discography' | 'skills' | 'regions' | 'gigs' | 'platforms' | 'charts' | 'x' | 'google' | 'settings' | 'youtube' | 'plaques' | 'grammys' | 'merch' | 'wrapped' | 'tour' | 'tiktok';
+export type GameScreen = 'loading' | 'home' | 'saves' | 'create' | 'dashboard' | 'studio' | 'discography' | 'skills' | 'regions' | 'gigs' | 'platforms' | 'charts' | 'x' | 'google' | 'settings' | 'youtube' | 'plaques' | 'grammys' | 'merch' | 'wrapped' | 'tour' | 'tiktok' | 'labels';
 
 export type AwardCategory = 'Artist of the Year' | 'Song of the Year' | 'Album of the Year' | 'Record of the Year' | 'Best Pop Album' | 'Best Pop Duo/Group Performance' | 'Best Country Album' | 'Best Rap Album';
 
@@ -64,10 +64,13 @@ export interface BaseRelease {
   id: string;
   title: string;
   coverImage: string;
+  artistId?: string; // If undefined, belongs to player
+  isNPCRelease?: boolean;
   type: ReleaseType;
   status: ReleaseStatus;
   releaseDate: string | null; // ISO string of game date, null if vaulted
   debutStreams?: number;
+  totalPreSaves?: number;
   lastDailyStreams?: {
     spotify: number;
     appleMusic?: number;
@@ -99,6 +102,7 @@ export interface BaseRelease {
     total: number;
   };
   radioPlays: number;
+  masterOwner?: string;
   chartHistory?: {
     [chartName: string]: {
       debutDate: string;
@@ -138,6 +142,60 @@ export interface Gig {
   completed: boolean;
 }
 
+
+export interface ScheduledTrack {
+  id: string;
+  releaseScheduleId: string;
+  trackNumber: number;
+  title: string;
+  artistId: string;
+  featuredArtists: string[];
+  isReleased: boolean;
+  isAnnounced: boolean;
+  isHidden: boolean;
+  singleReleaseDate?: string;
+  duration: number;
+  genre: Genre;
+  qualityScore: number;
+}
+
+export interface ReleaseSchedule {
+  id: string;
+  artistId: string; // artistName for NPCs
+  releaseTitle: string;
+  releaseType: 'Album' | 'Single' | 'EP' | 'Deluxe Album';
+  coverImage: string;
+  bannerImage: string;
+  releaseDate: string;
+  announcementDate: string;
+  status: 'scheduled' | 'upcoming' | 'released' | 'cancelled';
+  totalPreSaves: number;
+  dailyPreSaves: number;
+  preSaveGrowth: number;
+  hypeScore: number;
+  popularityScore: number;
+  isPlayerRelease: boolean;
+  isNPCRelease: boolean;
+  tracks: ScheduledTrack[];
+  createdAt: string;
+}
+
+export interface PreSave {
+  id: string;
+  userId: string;
+  releaseScheduleId: string;
+  artistId: string;
+  createdAt: string;
+}
+
+export interface UpcomingRanking {
+  releaseScheduleId: string;
+  rank: number;
+  totalPreSaves: number;
+  preSaveGrowth: number;
+  releaseDate: string;
+  trendingScore: number;
+}
 export interface GameState {
   version: number;
   artist: {
@@ -153,6 +211,7 @@ export interface GameState {
       customTweets?: { id: string; content: string; date: number; likes: number; retweets: number; replies: number; mediaUrl?: string }[];
     };
     spotifyArtistPickId?: string;
+    labelContract?: RecordLabelContract | null;
   } | null;
   merch: {
     id: string;
@@ -199,6 +258,26 @@ export interface GameState {
     currentMonthTourRev?: number;
     currentMonthSongRev?: Record<string, number>;
   };
+  scheduledReleases: ReleaseSchedule[];
+  userPreSaves: string[];
+  npcStats?: Record<string, {
+    listeners: number;
+    skills: {
+      performance: number;
+      production: number;
+      songwriting: number;
+      vocals: number;
+      pop: number;
+      kpop: number;
+      rap: number;
+      country: number;
+    };
+    popularity: {
+      america: number;
+      latinAmerica: number;
+      europe: number;
+    };
+  }>;
   time: {
     startDate: string; // ISO string 
     daysPassed: number;
@@ -237,6 +316,10 @@ export interface Email {
     fee: number;
     status: 'pending' | 'accepted' | 'rejected';
     genre: Genre;
+  };
+  contractOffer?: Partial<RecordLabelContract> & { 
+    labelId: string;
+    status: 'pending' | 'accepted' | 'rejected';
   };
 }
 
@@ -361,4 +444,21 @@ export interface TikTokProfile {
   sounds: TikTokSound[];
   fatigueScore: number; // 0 to 100
   lastPostDate?: string;
+}
+
+export interface RecordLabelContract {
+  labelId: string;
+  type: 'album' | 'year'; // length based on albums or years
+  duration: number; // Num years if type is 'year'
+  requiredAlbums: number;
+  requiredEPs: number;
+  requiredSingles: number;
+  deliveredAlbums: number;
+  deliveredEPs: number;
+  deliveredSingles: number;
+  advanceMoney: number;
+  unrecoupedBalance: number;
+  royaltyCut: number; // label's cut
+  revenueGeneratedForLabel: number;
+  signedDate: string;
 }

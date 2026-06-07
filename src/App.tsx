@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import localforage from 'localforage';
-import { Play, Download, Search, Upload, User, Image as ImageIcon, MapPin, Music, DollarSign, Calendar as CalendarIcon, Award, Activity, Menu, Save, Loader2, Mic, Disc, Zap, Globe, Ticket, Settings as SettingsIcon, Trophy, BarChart3, ShoppingBag, Sparkles, X } from 'lucide-react';
+import { Play, Download, Search, Upload, User, Image as ImageIcon, MapPin, Music, DollarSign, Calendar as CalendarIcon, Award, Activity, Menu, Save, Loader2, Mic, Disc, Zap, Globe, Ticket, Settings as SettingsIcon, Trophy, BarChart3, ShoppingBag, Sparkles, X, Star } from 'lucide-react';
 import { GameState, GameScreen, StartCapital, DailyReportData, Song, Album, Gig } from './types';
 import { LEVEL_REQUIREMENTS, NPC_ARTISTS } from './constants';
 import { ARTIST_DISCOGRAPHY } from './artistDiscography';
@@ -24,6 +24,7 @@ import { GrammysView } from './components/GrammysView';
 import { SpotifyWrappedView } from './components/SpotifyWrappedView';
 import { TikTokView } from './components/TikTokView';
 import { processTikTokDaily } from './tiktokUtils';
+import { LabelsView } from './components/LabelsView';
 
 import { TourView } from './components/TourView';
 
@@ -43,7 +44,11 @@ export interface SaveProfile {
   lastPlayed: number;
 }
 
+let globalShowToast: (msg: string) => void = () => {};
+window.alert = (msg: any) => globalShowToast(String(msg));
+
 export default function App() {
+  const [toastMsg, setToastMsg] = useState('');
   const [screen, setScreen] = useState<GameScreen>('loading');
   const [showUpdatePopup, setShowUpdatePopup] = useState(false);
   const [gameState, setGameState] = useState<GameState | null>(null);
@@ -55,7 +60,13 @@ export default function App() {
   const [saveProfiles, setSaveProfiles] = useState<SaveProfile[]>([]);
 
   useEffect(() => {
-    const initSaves = async () => {
+     let timeoutId: any;
+     globalShowToast = (msg: string) => {
+         setToastMsg(msg);
+         if (timeoutId) clearTimeout(timeoutId);
+         timeoutId = setTimeout(() => setToastMsg(''), 3000);
+     };
+     const initSaves = async () => {
       try {
         let idx = await localforage.getItem<string>('musician_simulator_saves_index');
         
@@ -251,9 +262,11 @@ export default function App() {
 
     // Use a very short timeout for auto-advance, otherwise use the normal simulation delay
     setTimeout(() => {
+      try {
       let dailyStreams = 0;
       let dailySales = 0;
       let revenue = 0;
+      let labelRecoupableRevenue = 0;
       let dailyStreamingRev = 0;
       let dailySalesRev = 0;
       let dailySongRev: Record<string, number> = {};
@@ -277,11 +290,251 @@ export default function App() {
       let workingReleases = [...(gameState.releases || [])];
       const newlyPublishedAlbumIds = new Set<string>();
 
-      // First pass: trigger Scheduled to Published
+      // Daily NPC scheduling check
+      if (gameState.time.daysPassed > 0) {
+         NPC_ARTISTS.forEach(npc => {
+            // Each NPC decides to start an album/single cycle once every 365 days based on their name
+            const npcDayOffset = (npc.name.charCodeAt(0) * 17 + (npc.name.charCodeAt(1) || 0) * 31) % 365;
+            if (gameState.time.daysPassed % 365 !== npcDayOffset) return;
+
+            const currentYearCycle = Math.floor(gameState.time.daysPassed / 365);
+            const disco = (ARTIST_DISCOGRAPHY as any) || {};
+            const albumsList = disco[npc.name]?.albums || [];
+            if (albumsList.length === 0) return;
+            
+            // Delete oldest releases to maintain history size (max 5 albums per NPC)
+            const npcRels = workingReleases.filter(r => (r as any).isNPCRelease && (r as any).artistId === npc.name);
+            const npcAlbums = npcRels.filter(r => ['Album', 'EP', 'Deluxe Album', 'Single Pack'].includes(r.type)).sort((a,b) => new Date(a.releaseDate||0).getTime() - new Date(b.releaseDate||0).getTime());
+            
+            if (npcAlbums.length > 5) {
+               const oldestAlbum = npcAlbums[0];
+               // Delete oldest album and its tracks
+               workingReleases = workingReleases.filter(r => r.id !== oldestAlbum.id && !(oldestAlbum.trackIds?.includes(r.id)));
+            }
+
+            // Randomly pick: 1-2 albums, OR 1-3 singles only
+            const isSingleOnlyYear = Math.random() < 0.3;
+            const singleCount = Math.floor(Math.random() * 3) + 1; // 1 to 3
+            const albumCount = Math.random() < 0.2 ? 2 : 1; // mostly 1, sometimes 2
+
+            const itemsToSchedule = isSingleOnlyYear ? singleCount : albumCount;
+
+            for (let j = 0; j < itemsToSchedule; j++) {
+                const baseDate = new Date(currentDateObj);
+                const daysUntilRelease = [8, 14, 21, 30, 45, 60][Math.floor(Math.random() * 6)];
+                baseDate.setDate(baseDate.getDate() + daysUntilRelease);
+
+                const npcPublishedAlbumTitles = npcRels.map(r => r.title);
+                const unusedAlbums = albumsList.filter((a: any) => !npcPublishedAlbumTitles.includes(a.title));
+                
+                let albumDisco;
+                let randomAlbumIdx = 0;
+                if (unusedAlbums.length > 0) {
+                    const rnd = Math.floor(Math.random() * unusedAlbums.length);
+                    albumDisco = unusedAlbums[rnd];
+                    randomAlbumIdx = albumsList.findIndex((a: any) => a.title === albumDisco.title);
+                } else {
+                    randomAlbumIdx = Math.floor(Math.random() * albumsList.length);
+                    albumDisco = { ...albumsList[randomAlbumIdx] };
+                    albumDisco.title = `${albumDisco.title} (${currentYearCycle + 1} Edition)`;
+                }
+
+                let albumTracks = [];
+                if (disco[npc.name]?.tracks && disco[npc.name]?.tracks.length > 0) {
+                    albumTracks = disco[npc.name].tracks.filter((t: any) => t.cover === albumDisco.cover);
+                    if (albumTracks.length === 0) {
+                         albumTracks = disco[npc.name].tracks.slice(randomAlbumIdx * 10, (randomAlbumIdx + 1) * 10);
+                    }
+                    if (albumTracks.length === 0) {
+                        albumTracks = [disco[npc.name].tracks[0]];
+                    }
+                }
+
+                if (isSingleOnlyYear) {
+                     // Schedule a standalone single
+                     const track = albumTracks[Math.floor(Math.random() * albumTracks.length)] || { title: `Single ${currentYearCycle}-${j}`, cover: albumDisco?.cover };
+                     
+                     let title = track.title;
+                     let collaborator = undefined;
+                     let isNPCCollab = false;
+                     const featMatch = title.match(/\b(?:feat\.?|featuring|ft\.?)\s+([^()[\]]+)/i);
+                     if (featMatch && featMatch[1]) {
+                         const featName = featMatch[1].trim();
+                         const isRealNPC = NPC_ARTISTS.find(a => a.name.toLowerCase() === featName.toLowerCase());
+                         if (isRealNPC) {
+                             collaborator = isRealNPC.name;
+                             isNPCCollab = true;
+                             title = title.substring(0, featMatch.index) + 'feat. ' + collaborator + title.substring(featMatch.index + featMatch[0].length);
+                         } else {
+                             const otherNPCs = NPC_ARTISTS.filter(a => a.name !== npc.name);
+                             const randomNPC = otherNPCs[Math.floor(Math.random() * otherNPCs.length)].name;
+                             collaborator = randomNPC;
+                             isNPCCollab = true;
+                             title = title.substring(0, featMatch.index) + 'feat. ' + randomNPC + title.substring(featMatch.index + featMatch[0].length);
+                         }
+                     }
+
+                     workingReleases.push({
+                        id: `npc-${npc.name}-singleonly-${currentYearCycle}-${j}`,
+                        title: title,
+                        coverImage: track.cover || albumDisco?.cover || `https://i.pravatar.cc/200?u=${encodeURIComponent(npc.name)}`,
+                        artistId: npc.name,
+                        collaborator: collaborator,
+                        isNPCCollab,
+                        isNPCRelease: true,
+                        isBSide: false,
+                        type: 'Single',
+                        genre: npc.type || 'Pop',
+                        status: 'Scheduled',
+                        releaseDate: baseDate.toISOString(),
+                        trend: 'Non-Hit',
+                        streams: { spotify: npc.basePoints * 5, appleMusic: npc.basePoints * 2, amazonMusic: npc.basePoints * 1, youtubeMusic: npc.basePoints * 3, total: npc.basePoints * 11 },
+                        sales: { physical: 0, digital: 0, total: 0 },
+                        radioPlays: 0,
+                        debutStreams: npc.basePoints * 2
+                     } as any);
+                     
+                } else {
+                     // Schedule Album + singles
+                     let single1Date = new Date(baseDate);
+                     let single2Date = new Date(baseDate);
+                     let albumDate = new Date(baseDate);
+
+                     const dropSimultaneously = Math.random() > 0.8;
+                     if (dropSimultaneously) {
+                         const offset = 7 + Math.floor(Math.random() * 14);
+                         single1Date.setDate(single1Date.getDate() + offset);
+                         single2Date.setDate(single2Date.getDate() + offset);
+                         albumDate.setDate(albumDate.getDate() + offset);
+                     } else {
+                         single1Date.setDate(single1Date.getDate() + 7);
+                         single2Date.setDate(single2Date.getDate() + 21);
+                         albumDate.setDate(albumDate.getDate() + 35);
+                     }
+
+                     const albumId = `npc-${npc.name}-album-${currentYearCycle}-${j}`;
+                     const trackIds = albumTracks.map((_, i) => `npc-${npc.name}-single-${currentYearCycle}-${j}-${i}`);
+                     
+                     workingReleases.push({
+                         id: albumId,
+                         title: albumDisco.title,
+                         coverImage: albumDisco.cover || `https://i.pravatar.cc/200?u=${encodeURIComponent(npc.name)}`,
+                         artistId: npc.name,
+                         isNPCRelease: true,
+                         type: 'Album',
+                         status: 'Scheduled',
+                         releaseDate: albumDate.toISOString(),
+                         trackIds,
+                         trend: 'Non-Hit',
+                         streams: { spotify: npc.basePoints * 10, appleMusic: npc.basePoints * 5, amazonMusic: npc.basePoints * 2, youtubeMusic: npc.basePoints * 8, total: npc.basePoints * 25 },
+                         sales: { physical: 0, digital: 0, total: 0 },
+                         radioPlays: 0,
+                         debutStreams: npc.basePoints * 5
+                     } as any);
+                     
+                     albumTracks.forEach((track: any, i: number) => {
+                         let rDate = albumDate;
+                         if (!dropSimultaneously) {
+                             if (i === 0) rDate = single1Date;
+                             if (i === 1) rDate = single2Date;
+                         }
+                         
+                         let title = track.title;
+                         let collaborator = undefined;
+                         let isNPCCollab = false;
+                         const featMatch = title.match(/\b(?:feat\.?|featuring|ft\.?)\s+([^()[\]]+)/i);
+                         if (featMatch && featMatch[1]) {
+                             const featName = featMatch[1].trim();
+                             const isRealNPC = NPC_ARTISTS.find(a => a.name.toLowerCase() === featName.toLowerCase());
+                             
+                             if (isRealNPC) {
+                                 collaborator = isRealNPC.name;
+                                 isNPCCollab = true;
+                                 title = title.substring(0, featMatch.index) + 'feat. ' + collaborator + title.substring(featMatch.index + featMatch[0].length);
+                             } else {
+                                 const otherNPCs = NPC_ARTISTS.filter(a => a.name !== npc.name);
+                                 const randomNPC = otherNPCs[Math.floor(Math.random() * otherNPCs.length)].name;
+                                 collaborator = randomNPC;
+                                 isNPCCollab = true;
+                                 title = title.substring(0, featMatch.index) + 'feat. ' + randomNPC + title.substring(featMatch.index + featMatch[0].length);
+                             }
+                         }
+
+                         workingReleases.push({
+                             id: trackIds[i],
+                             title: title,
+                             coverImage: track.cover || albumDisco.cover || `https://i.pravatar.cc/200?u=${encodeURIComponent(npc.name)}`,
+                             artistId: npc.name,
+                             collaborator,
+                             isNPCCollab,
+                             isNPCRelease: true,
+                             isBSide: i > 1,
+                             type: 'Single',
+                             genre: npc.type || 'Pop',
+                             status: 'Scheduled',
+                             releaseDate: rDate.toISOString(),
+                             trend: 'Non-Hit',
+                             streams: { spotify: npc.basePoints * 5, appleMusic: npc.basePoints * 2, amazonMusic: npc.basePoints * 1, youtubeMusic: npc.basePoints * 3, total: npc.basePoints * 11 },
+                             sales: { physical: 0, digital: 0, total: 0 },
+                             radioPlays: 0,
+                             debutStreams: npc.basePoints * 2
+                         } as any);
+                     });
+                }
+            }
+         });
+      }
+
+      // First pass: trigger Scheduled to Published and daily Pre-Save growth
       workingReleases = workingReleases.map(r => {
-        if (r.status === 'Scheduled' && r.releaseDate && new Date(r.releaseDate) <= currentDateObj) {
-           if (['Album', 'EP', 'Single Pack', 'Deluxe Album'].includes(r.type)) newlyPublishedAlbumIds.add((r as Album).id);
-           return { ...r, status: 'Published' };
+        if (r.status === 'Scheduled' && r.releaseDate) {
+            const relDate = new Date(r.releaseDate);
+            if (relDate <= currentDateObj) {
+               if (['Album', 'EP', 'Single Pack', 'Deluxe Album'].includes(r.type)) newlyPublishedAlbumIds.add((r as Album).id);
+               return { ...r, status: 'Published' };
+            } else {
+               // Calculate daily pre-save growth
+               const isNPC = !!(r as any).isNPCRelease;
+               const npc = isNPC ? NPC_ARTISTS.find(n => n.name === (r as any).artistId) : null;
+               
+               let popTarget = isNPC ? (npc ? Math.floor((npc.basePoints / 450000) * 100) : 50) : ((gameState.popularity?.america || 10) + (gameState.popularity?.europe || 5) + (gameState.popularity?.latinAmerica || 5)) / 3;
+               
+               // Album hype from lead single
+               let leadSingleHypeMux = 1.0;
+               if (!isNPC && ['Album', 'EP', 'Deluxe Album'].includes(r.type)) {
+                   const albId = r.id;
+                   const releasedSingles = (gameState.releases || []).filter(sl => sl.type === 'Single' && sl.status === 'Published' && (r as Album).trackIds?.includes(sl.id));
+                   for (const s of releasedSingles) {
+                       if (s.trend === 'Mega Hit') leadSingleHypeMux = Math.max(leadSingleHypeMux, 3.5);
+                       else if (s.trend === 'Hit') leadSingleHypeMux = Math.max(leadSingleHypeMux, 2.0);
+                       else if (s.trend === 'Viral') leadSingleHypeMux = Math.max(leadSingleHypeMux, 1.5);
+                   }
+               }
+               
+               let baseDaily = Math.pow(popTarget / 100, 3) * 200000;
+               if (!isNPC) {
+                  // Social media buzz
+                  baseDaily += ((gameState.stats.socialFollowers || 0) * 0.0005);
+               }
+               baseDaily = Math.max(10, baseDaily * leadSingleHypeMux);
+               
+               const daysUntilRelease = Math.max(1, Math.floor((relDate.getTime() - currentDateObj.getTime()) / (1000 * 3600 * 24)));
+               
+               // Growth multiplier: increases as it gets closer
+               let growthMux = 1.0;
+               if (daysUntilRelease <= 3) growthMux = 4.0;
+               else if (daysUntilRelease <= 7) growthMux = 2.0;
+               else if (daysUntilRelease <= 14) growthMux = 1.3;
+               else if (daysUntilRelease > 30) growthMux = 0.5;
+
+               // Apply random jitter
+               let newPreSaves = Math.floor(baseDaily * growthMux * (Math.random() * 0.4 + 0.8));
+               
+               return { 
+                   ...r, 
+                   totalPreSaves: (r.totalPreSaves || 0) + newPreSaves 
+               };
+            }
         }
         return r;
       });
@@ -290,7 +543,7 @@ export default function App() {
       const publishedAlbumTracks = new Map<string, { date: string, cover?: string }>(); // trackId -> album info
       workingReleases.forEach(r => {
          if (['Album', 'EP', 'Single Pack', 'Deluxe Album'].includes(r.type) && r.status === 'Published' && r.releaseDate) {
-            (r as Album).trackIds.forEach(id => publishedAlbumTracks.set(id, { date: r.releaseDate!, cover: r.coverImage }));
+            ((r as Album).trackIds || []).forEach(id => publishedAlbumTracks.set(id, { date: r.releaseDate!, cover: r.coverImage }));
          }
       });
 
@@ -328,7 +581,7 @@ export default function App() {
       if (updatedTikTok) {
          // Auto-add published singles to TikTok sounds
          workingReleases.forEach(r => {
-             if (r.type === 'Single' && r.status === 'Published') {
+             if (r.type === 'Single' && r.status === 'Published' && !(r as any).isNPCRelease) {
                  const exists = updatedTikTok.sounds?.find((s: any) => s.songId === r.id);
                  if (!exists) {
                      let startingTrend = 'Non Trend';
@@ -362,14 +615,20 @@ export default function App() {
 
         if (currentStatus === 'Published') {
             const isSong = release.type === 'Single';
-            const genreMultiplier = isSong 
-              ? 1 + ((gameState.skills[(release as Song).genre.toLowerCase() as keyof GameState['skills']] || 10) / 100)
-              : 1.2; // Max 2.0
-
-            const totalPop = gameState.popularity ? (gameState.popularity.america + gameState.popularity.latinAmerica + gameState.popularity.europe) : 0;
-            const popBoost = 1 + (totalPop / 40); // Max 8.5
+            const isNPC = release.isNPCRelease || !!((release as any).artistId && NPC_ARTISTS.some(n => n.name === (release as any).artistId));
+            const npc = isNPC ? NPC_ARTISTS.find(n => n.name === (release as any).artistId) : null;
             
-            const qualityMod = isSong ? ((release as Song).qualityModifier || 1) : 2; // Typically 1 to 4
+            // Fix NPC base calculations so they emulate a high-tier player.
+            // basePoints are roughly 250k-450k. 450000 = Taylor Swift (Level ~90)
+            const effectiveLevel = npc ? Math.min(99, Math.floor((npc.basePoints / 450000) * 90)) : artistLevel;
+            
+            // For Player: max totalPop ~300. 
+            const totalPop = npc ? Math.floor((npc.basePoints / 450000) * 400) : (gameState.popularity ? (gameState.popularity.america + gameState.popularity.latinAmerica + gameState.popularity.europe) : 0);
+            
+            const genreMultiplier = npc ? 1.2 : (isSong ? 1 + ((gameState.skills[(release as Song).genre.toLowerCase() as keyof GameState['skills']] || 10) / 200) : 1.1);
+            const popBoost = npc ? 1 + (totalPop / 60) : 1 + (totalPop / 100);
+            
+            const qualityMod = isNPC ? 2.0 : (isSong ? ((release as Song).qualityModifier || 1) : 1.5);
 
             // Hit Factor (Deterministic per-song based on title)
             const hash = release.title ? release.title.split('').reduce((a, b) => a + b.charCodeAt(0), 0) : 0;
@@ -377,10 +636,10 @@ export default function App() {
             
             // Trend Factor: Shift probabilities based on level, popularity, and quality.
             // Max shift around +0.20 for top tier players.
-            let trendShift = ((artistLevel / 10) * 0.05) + ((popBoost / 8.5) * 0.10) + ((qualityMod / 4) * 0.05);
+            let trendShift = ((effectiveLevel / 10) * 0.05) + ((popBoost / 8.5) * 0.10) + ((qualityMod / 4) * 0.05);
             
             // User requested Level 10 singles to be significantly easier to Hit (but not necessarily Mega Hit)
-            if (isSong && artistLevel >= 10) {
+            if (isSong && effectiveLevel >= 10) {
                trendShift += 0.25; // Significant boost to reach the "Hit" threshold (0.85)
             }
 
@@ -440,7 +699,7 @@ export default function App() {
             }
 
             const hitLongevity = Math.max(1, hitMultiplier);
-            const longevityMultiplier = (qualityMod * 0.5) + (artistLevel * 0.15) + (hitLongevity * 0.5); // Usually 1.5 to ~5
+            const longevityMultiplier = (qualityMod * 0.5) + (effectiveLevel * 0.15) + (hitLongevity * 0.5); // Usually 1.5 to ~5
 
             // Sync with TikTok sound
             if (updatedTikTok) {
@@ -466,22 +725,21 @@ export default function App() {
             // Mass Streaming Debut Boost (Fanbase Power)
             // Fanbase streams massive numbers in the first week, especially first 3 days, irrespective of trend.
             if (daysSinceRelease <= 21) {
-               // Max fandomPower ~33 at level 99 and 100% popularity in all regions
-               const fandomPower = 1 + (popBoost / 1.2) + (artistLevel / 4);
+               const fandomPower = 1 + (popBoost / 1.5) + Math.sqrt(effectiveLevel) / 1.5;
                // Smooth curve dropping from 1.0 to close to 0 over 3 weeks
                const debutCurve = Math.exp(-(daysSinceRelease) / 7); 
                
                let debutMultiplier = fandomPower * debutCurve;
                if (isBSide && currentTrend !== 'Mega Hit' && currentTrend !== 'Hit') {
                    // B-sides get a smaller debut push
-                   debutMultiplier *= 0.5;
+                   debutMultiplier *= (isNPC ? 0.2 : 0.4);
                }
                initialHypeCurve *= Math.max(1, debutMultiplier);
             }
             
             // 3. Catalog Tail (Slow burn)
             // Reduced to prevent old songs from being too overpowered
-            const tailHalfLife = (150 + (artistLevel * 20)) * longevityMultiplier; 
+            const tailHalfLife = (150 + (effectiveLevel * 20)) * longevityMultiplier; 
             const catalogBase = isBSide && (currentTrend === 'Non-Hit' || currentTrend === 'Flop') ? 0.002 : 0.015; 
             const tailCurve = catalogBase * Math.exp(-daysSinceRelease / tailHalfLife);
             
@@ -489,7 +747,7 @@ export default function App() {
 
             // --- STABILITY FLOOR (The "Legacy Effect") ---
             // Prevents massive artists from dropping to zero, giving a realistic floor
-            let floorPercentage = artistLevel >= 10 ? 0.015 + (intrinsicHitFactor * 0.015) : (artistLevel * 0.0015); 
+            let floorPercentage = effectiveLevel >= 10 ? 0.015 + (intrinsicHitFactor * 0.015) : (effectiveLevel * 0.0015); 
             
             // Cap the floor for non-Mega Hits to ensure Hits settle < 1M streams realistically
             if (currentTrend === 'Hit') {
@@ -542,11 +800,13 @@ export default function App() {
             // Streams logic
             const baseStreams = ((hash % 16000) + 4000) + (Math.random() * 8000); // 4k to 28k base with randomization
             
+            const releaseLevelMultiplier = 1 + Math.sqrt(effectiveLevel) * 0.4;
+
             let rawStreamsTotal = baseStreams * 
                 Math.pow(qualityMod, 1.4) *  // max ~7
                 genreMultiplier *            // max 2
                 popBoost *                   // max 8.5
-                levelMultiplier *            // max ~5 at level 10
+                releaseLevelMultiplier *     // max ~5 at level 10, ~40 at level 90 (NPC)
                 hitMultiplier *              // max 4.5
                 featBoost *                  // boost from featured artist
                 (1 + (prodSkill + vocalSkill + swSkill)/3) * // max 2
@@ -570,10 +830,10 @@ export default function App() {
             
             // SUPERSTAR CATALOG FLOOR:
             // Prevents old songs from dying completely, but now scales with song popularity/identity
-            const globalPopForFloor = Math.max(1, (gameState.popularity?.america || 0) + (gameState.popularity?.europe || 0) + (gameState.popularity?.latinAmerica || 0));
+            const globalPopForFloor = Math.max(1, totalPop);
             // Apply hitMultiplier and B-side penalty to the legacy stream floor to give songs individual identities
             const legacyIdentityMultiplier = (hitMultiplier * 0.5) * (isBSide ? 0.15 : 1.0); 
-            const superstarHardFloor = isSong ? Math.floor((globalPopForFloor / 100) * artistLevel * 250 * Math.max(0.2, legacyIdentityMultiplier)) : Math.floor((globalPopForFloor / 100) * artistLevel * 750); 
+            const superstarHardFloor = isSong ? Math.floor((globalPopForFloor / 100) * effectiveLevel * 250 * Math.max(0.2, legacyIdentityMultiplier)) : Math.floor((globalPopForFloor / 100) * effectiveLevel * 750); 
             if (rawStreamsTotal < superstarHardFloor && daysSinceRelease > 14) { 
                 rawStreamsTotal = Math.max(rawStreamsTotal, superstarHardFloor * (Math.random() * 0.2 + 0.9));
             }
@@ -604,39 +864,55 @@ export default function App() {
             const digitalSaleRate = isSong ? 0.0002 : 0.0015; // e.g. 20M streams -> 4k single sales. 10M album streams -> 15k digital album sales
             const physicalSaleRate = isSong ? 0.00005 : 0.003; 
             
+            const usPop = isNPC ? Math.floor((npc!.basePoints / 450000) * 100) : (gameState.popularity?.america || 10);
+            const maxPhysicalPopMulti = Math.max(0.5, usPop / 50);
+
             const newDigitalSales = Math.floor(dStreamsTotal * digitalSaleRate * qualityMod * (isWeekend ? 1.2 : 0.9) * (1 + (hash%20)/100)); // slight variance
-            const newPhysicalSales = Math.floor(dStreamsTotal * physicalSaleRate * qualityMod * Math.max(0.5, (gameState.popularity?.america || 10)/50) * (1 + (hash%30)/100));
+            const newPhysicalSales = Math.floor(dStreamsTotal * physicalSaleRate * qualityMod * maxPhysicalPopMulti * (1 + (hash%30)/100));
             
             const totalNewSales = newDigitalSales + newPhysicalSales;
-            dailySales += totalNewSales;
+            if (!isNPC) {
+                dailySales += totalNewSales;
+            }
             const salesRev = (newDigitalSales * 0.99 + newPhysicalSales * (isSong ? 4.99 : 14.99)) * 0.25; // 25% artist cut
             const streamingRev = dStreamsTotal * 0.00007; // Extra hard payout: $0.00007 per stream (100k streams = $7)
-            
-            revenue += salesRev;
-            dailySalesRev += salesRev;
             
             let currentReleaseRev = salesRev;
 
             if (isSong) {
-                revenue += streamingRev;
-                dailyStreamingRev += streamingRev;
+                if (!isNPC) {
+                    revenue += streamingRev;
+                    if (release.masterOwner) {
+                       labelRecoupableRevenue += streamingRev;
+                    }
+                    dailyStreamingRev += streamingRev;
+                }
                 currentReleaseRev += streamingRev;
             }
             
-            dailySongRev[release.id] = currentReleaseRev;
+            if (!isNPC) {
+               dailySongRev[release.id] = currentReleaseRev;
+               revenue += salesRev;
+               if (release.masterOwner) {
+                   labelRecoupableRevenue += salesRev;
+               }
+               dailySalesRev += salesRev;
+            }
 
             // Occasional viral spike (1% chance per day)
             // (Moved to top before dStreamsTotal calculation)
-            if (isSong) {
+            if (isSong && !isNPC) {
                 dailyStreams += dStreamsTotal;
             }
 
-            if (release.type === 'Single' && dStreamsTotal > maxSongStreams) {
-                maxSongStreams = dStreamsTotal;
-                topSong = release.title;
-            } else if (['Album', 'EP', 'Single Pack', 'Deluxe Album'].includes(release.type) && dStreamsTotal > maxAlbumStreams) {
-                maxAlbumStreams = dStreamsTotal;
-                topAlbum = release.title;
+            if (!isNPC) {
+                if (release.type === 'Single' && dStreamsTotal > maxSongStreams) {
+                    maxSongStreams = dStreamsTotal;
+                    topSong = release.title;
+                } else if (['Album', 'EP', 'Single Pack', 'Deluxe Album'].includes(release.type) && dStreamsTotal > maxAlbumStreams) {
+                    maxAlbumStreams = dStreamsTotal;
+                    topAlbum = release.title;
+                }
             }
             
             const oldTotal = typeof release.streams === 'number' ? release.streams : (release.streams?.total || 0);
@@ -955,7 +1231,15 @@ export default function App() {
          };
       });
 
-      revenue += merchRevenue + gigPayouts + tourTicketRevenue;
+      // For label merch and regular merch
+      revenue += merchRevenue;
+        
+      // Treat 50% of merch revenue as label recoupable IF they have a contract (simplification)
+      if (gameState.artist?.labelContract && merchRevenue > 0) {
+          labelRecoupableRevenue += (merchRevenue * 0.5);
+      }
+        
+      revenue += gigPayouts + tourTicketRevenue;
 
       let updatedReleasesWithSales = updatedReleases.map(r => {
          const d = totalDigitalSalesToAdd[r.id] || 0;
@@ -1120,7 +1404,7 @@ export default function App() {
            if (nextGrammys.stage === 'Results') {
               // Save player nominations to history before resetting
               const playerNominationsThisYear: any[] = [];
-              currentGrammys.results.forEach(cat => {
+              (currentGrammys.results || []).forEach(cat => {
                  const playerNom = cat.nominees.find(n => n.isPlayer);
                  if (playerNom) {
                     playerNominationsThisYear.push({
@@ -1260,14 +1544,14 @@ export default function App() {
                
                const getSpotifyStreams = (itemStreams: any) => typeof itemStreams === 'number' ? Math.floor(itemStreams * 0.4) : (itemStreams?.spotify || 0);
 
-               const songs = updatedReleasesWithSales.filter(r => r.type === 'Single').map(s => {
+               const songs = updatedReleasesWithSales.filter(r => !r.isNPCRelease && r.type === 'Single').map(s => {
                    const sStreams = getSpotifyStreams(s.streams);
                    const spotifyThisYear = Math.max(0, sStreams - (s.lastWrappedStreams?.spotify || 0));
                    return { ...s, spotifyThisYear };
                }).sort((a, b) => b.spotifyThisYear - a.spotifyThisYear).slice(0, 5);
                const topSongs = songs.map(s => ({ title: s.title, streams: s.spotifyThisYear, image: s.coverImage }));
                   
-               const albums = updatedReleasesWithSales.filter(r => ['Album', 'EP', 'Single Pack', 'Deluxe Album'].includes(r.type)).map(a => {
+               const albums = updatedReleasesWithSales.filter(r => !r.isNPCRelease && ['Album', 'EP', 'Single Pack', 'Deluxe Album'].includes(r.type)).map(a => {
                    const aStreams = getSpotifyStreams(a.streams);
                    const spotifyThisYear = Math.max(0, aStreams - (a.lastWrappedStreams?.spotify || 0));
                    return { ...a, spotifyThisYear };
@@ -1303,7 +1587,95 @@ export default function App() {
 
         let newEmails = prev.emails ? [...prev.emails] : [];
         let newCurrentYearRevenue = (prev.stats.currentYearRevenue || 0) + revenue;
-        let finalMoney = prev.stats.money + revenue;
+        
+        let labelDeduction = 0;
+        let finalRevenueForPlayer = revenue;
+        let newContract = prev.artist?.labelContract ? { ...prev.artist.labelContract } : undefined;
+
+        if (newContract && labelRecoupableRevenue > 0) {
+            const cut = newContract.royaltyCut / 100;
+            const labelCutAmount = Math.floor(labelRecoupableRevenue * cut);
+            let playerShare = labelRecoupableRevenue - labelCutAmount;
+            
+            if (newContract.unrecoupedBalance > 0) {
+                if (playerShare >= newContract.unrecoupedBalance) {
+                     playerShare -= newContract.unrecoupedBalance;
+                     newContract.unrecoupedBalance = 0;
+                } else {
+                     newContract.unrecoupedBalance -= playerShare;
+                     playerShare = 0;
+                }
+            }
+            
+            labelDeduction = labelRecoupableRevenue - playerShare;
+            finalRevenueForPlayer -= labelDeduction;
+            newContract.revenueGeneratedForLabel = (newContract.revenueGeneratedForLabel || 0) + labelCutAmount;
+        }
+
+        // Check for contract expiration
+        if (newContract) {
+            let isExpired = false;
+            let expirationReason = "";
+            const currentObj = new Date(currentDateObj);
+            const signedObj = new Date(newContract.signedDate);
+            
+            if (newContract.type === 'year') {
+                const yearsPassed = (currentObj.getTime() - signedObj.getTime()) / (1000 * 3600 * 24 * 365.25);
+                if (yearsPassed >= newContract.duration) {
+                     isExpired = true;
+                     expirationReason = `Your ${newContract.duration} year term has expired.`;
+                }
+            } else if (newContract.type === 'album') {
+                if (newContract.deliveredAlbums >= newContract.requiredAlbums) {
+                     isExpired = true;
+                     expirationReason = `You have delivered the required ${newContract.requiredAlbums} albums.`;
+                }
+            }
+
+            if (isExpired) {
+                newEmails.unshift({
+                    id: Math.random().toString(36).substring(7),
+                    dateStr: currentDateObj.toISOString(),
+                    sender: "Label Contract Dept.",
+                    subject: "Contract Satisfied & Expired",
+                    body: `Hello,\n\nThis letter is to formally notify you that your recording agreement has successfully concluded.\n${expirationReason}\n\nAny unrecouped balance ($${Math.floor(newContract.unrecoupedBalance).toLocaleString()}) has been written off by the label.\n\nPlease note: The label will permanently retain the master rights and collect royalties for any releases distributed during this deal, unless you decide to buy back the masters via your Discography.\n\nBest of luck on your independent journey.`,
+                    isRead: false
+                });
+                
+                // Add highly lucrative renewal offer if artist was very profitable or high level
+                if ((newContract.revenueGeneratedForLabel || 0) > 1000000 || (prev.artist?.level || 1) >= 4) {
+                    const isSuperstar = (prev.artist?.level || 1) >= 8 || (newContract.revenueGeneratedForLabel || 0) > 5000000;
+                    const dealType = Math.random() > 0.5 ? 'album' : 'year';
+                    const renewalDuration = dealType === 'album' ? Math.floor(Math.random() * 2) + 1 : Math.floor(Math.random() * 3) + 1;
+                    const renewalAdvance = Math.floor(Math.random() * 5000000) + 1000000 + (isSuperstar ? 10000000 : 0);
+                    const newRoyaltyCut = Math.max(5, newContract.royaltyCut - (isSuperstar ? 10 : 5));
+
+                    newEmails.unshift({
+                        id: Math.random().toString(36).substring(7),
+                        dateStr: currentDateObj.toISOString(),
+                        sender: "Label Executives",
+                        subject: "RENEWAL OFFER: Exclusive Contract",
+                        body: `We are absolutely blown away by your performance during our last deal. You are a massive asset to this label.\n\nWe don't want to lose you, so we are sending over a highly lucrative renewal contract with better terms, a massive advance, and lower royalty cuts.\n\nPlease let us know if you accept.`,
+                        isRead: false,
+                        contractOffer: {
+                            labelId: newContract.labelId,
+                            status: 'pending' as const,
+                            type: dealType,
+                            duration: renewalDuration,
+                            requiredAlbums: dealType === 'album' ? renewalDuration : 0,
+                            requiredEPs: 0,
+                            requiredSingles: dealType === 'year' ? renewalDuration * 2 : 0, 
+                            advanceMoney: renewalAdvance,
+                            royaltyCut: newRoyaltyCut
+                        }
+                    });
+                }
+
+                newContract = undefined;
+            }
+        }
+        
+        let finalMoney = prev.stats.money + finalRevenueForPlayer;
 
         // NPC Collab Offer Logic
         const pendingCollabsCount = newEmails.filter(e => e.collabOffer && e.collabOffer.status === 'pending').length;
@@ -1374,8 +1746,9 @@ export default function App() {
                 let topSongId = '';
                 let topSongRev = -1;
                 Object.entries(newMonthSongRev).forEach(([id, r]) => {
-                    if (r > topSongRev) {
-                        topSongRev = r;
+                    const rev = r as number;
+                    if (rev > topSongRev) {
+                        topSongRev = rev;
                         topSongId = id;
                     }
                 });
@@ -1383,7 +1756,7 @@ export default function App() {
 
                 const bodyTxt = `Monthly Revenue Report - ${prevDateObj.toLocaleString('en-US', {month: 'long', year: 'numeric'})}
 
-Total Monthly Revenue: $${Math.floor(totalMonthlyVar).toLocaleString()}
+Total Gross Monthly Revenue: $${Math.floor(totalMonthlyVar).toLocaleString()}
 
 Platform Breakdown:
 • Spotify: $${spotifyRev.toLocaleString()}
@@ -1393,6 +1766,7 @@ Platform Breakdown:
 • Merchandise: $${Math.floor(newMonthMerchRev).toLocaleString()}
 • Tours & Live Gigs: $${Math.floor(newMonthTourRev).toLocaleString()}
 
+${labelDeduction > 0 ? `* Advance Recoupment & Label Cut Deduction: -$${labelDeduction.toLocaleString()}\n` : ''}
 Top Generating Song:
 "${topSongTitle}" ($${Math.floor(topSongRev).toLocaleString()})
 `;
@@ -1419,6 +1793,7 @@ Top Generating Song:
           artist: prev.artist ? { 
             ...prev.artist, 
             level: currentLvl,
+            labelContract: newContract,
             socialProfile: prev.artist.socialProfile ? {
               ...prev.artist.socialProfile,
               customTweets: newCustomTweets
@@ -1488,8 +1863,10 @@ Top Generating Song:
           setIsAutoAdvancing(false);
           setScreen('wrapped');
       }
-
-      setIsLoadingNextDay(false);
+      } catch (err) { console.error('Error during advance time:', err); alert('Error advancing day. Fix code: ' + err); }
+      finally {
+         setIsLoadingNextDay(false);
+      }
     }, isAutoSkip ? 100 : 1500); 
   };
 
@@ -1505,6 +1882,90 @@ Top Generating Song:
         setCurrentSaveId(assignedSlotId);
     }
     
+    const npcReleases = [];
+    NPC_ARTISTS.forEach((npc, i) => {
+        const disco = (ARTIST_DISCOGRAPHY as any) || {};
+
+        // 1 Album
+        let albumId = `npc-${npc.name}-album-0`;
+        const albumDisco = disco[npc.name]?.albums?.[0];
+        
+        let albumTracks = [];
+        if (disco[npc.name]?.tracks && disco[npc.name]?.tracks.length > 0) {
+            albumTracks = disco[npc.name].tracks.filter((t: any) => t.cover === albumDisco?.cover);
+            if (albumTracks.length === 0) {
+                 albumTracks = disco[npc.name].tracks.slice(0, 10);
+            }
+            if (albumTracks.length === 0) {
+                albumTracks = [disco[npc.name].tracks[0]];
+            }
+        }
+
+        if (albumDisco) {
+            const trackIds = albumTracks.map((_, i) => `npc-${npc.name}-single-0-${i}`);
+            npcReleases.push({
+                id: albumId,
+                title: albumDisco.title,
+                coverImage: albumDisco.cover || `https://i.pravatar.cc/200?u=${encodeURIComponent(npc.name)}`,
+                artistId: npc.name,
+                isNPCRelease: true,
+                type: 'Album',
+                status: 'Published',
+                releaseDate: INITIAL_DATE,
+                trackIds, // Let this be populated so it behaves correctly
+                trend: 'Non-Hit',
+                streams: { spotify: npc.basePoints * 10, appleMusic: npc.basePoints * 5, amazonMusic: npc.basePoints * 2, youtubeMusic: npc.basePoints * 8, total: npc.basePoints * 25 },
+                sales: { physical: 0, digital: 0, total: 0 },
+                radioPlays: 0,
+                debutStreams: npc.basePoints * 5
+            });
+        }
+        
+        // Tracks
+        albumTracks.forEach((track: any, i: number) => {
+            let title = track.title;
+            let collaborator = undefined;
+            let isNPCCollab = false;
+            const featMatch = title.match(/\b(?:feat\.?|featuring|ft\.?)\s+([^()[\]]+)/i);
+            if (featMatch && featMatch[1]) {
+                const featName = featMatch[1].trim();
+                const isRealNPC = NPC_ARTISTS.find(a => a.name.toLowerCase() === featName.toLowerCase());
+                
+                if (isRealNPC) {
+                    collaborator = isRealNPC.name;
+                    isNPCCollab = true;
+                    title = title.substring(0, featMatch.index) + 'feat. ' + collaborator + title.substring(featMatch.index + featMatch[0].length);
+                } else {
+                    const otherNPCs = NPC_ARTISTS.filter(a => a.name !== npc.name);
+                    const randomNPC = otherNPCs[Math.floor(Math.random() * otherNPCs.length)].name;
+                    collaborator = randomNPC;
+                    isNPCCollab = true;
+                    title = title.substring(0, featMatch.index) + 'feat. ' + randomNPC + title.substring(featMatch.index + featMatch[0].length);
+                }
+            }
+
+            npcReleases.push({
+                id: `npc-${npc.name}-single-0-${i}`,
+                title: title,
+                coverImage: track.cover || albumDisco?.cover || `https://i.pravatar.cc/200?u=${encodeURIComponent(npc.name)}`,
+                artistId: npc.name,
+                collaborator,
+                isNPCCollab,
+                isNPCRelease: true,
+                isBSide: i > 1,
+                type: 'Single',
+                genre: npc.type || 'Pop',
+                status: 'Published',
+                releaseDate: INITIAL_DATE,
+                trend: 'Non-Hit',
+                streams: { spotify: npc.basePoints * 5, appleMusic: npc.basePoints * 2, amazonMusic: npc.basePoints * 1, youtubeMusic: npc.basePoints * 3, total: npc.basePoints * 11 },
+                sales: { physical: 0, digital: 0, total: 0 },
+                radioPlays: 0,
+                debutStreams: npc.basePoints * 2
+            });
+        });
+    });
+
     setGameState({
       version: 1,
       artist: {
@@ -1546,11 +2007,36 @@ Top Generating Song:
         sounds: [],
         fatigueScore: 0
       },
+      npcStats: Object.fromEntries(NPC_ARTISTS.map(npc => {
+        const isHighTier = npc.basePoints > 380000;
+        const regionBias = Math.random();
+        return [
+          npc.name,
+          {
+            listeners: npc.basePoints * (Math.random() * 20 + 80), // roughly 20-40 million
+            skills: {
+              performance: isHighTier ? 60 + Math.random() * 30 : 40 + Math.random() * 30,
+              production: isHighTier ? 60 + Math.random() * 30 : 40 + Math.random() * 30,
+              songwriting: isHighTier ? 60 + Math.random() * 30 : 40 + Math.random() * 30,
+              vocals: isHighTier ? 60 + Math.random() * 30 : 40 + Math.random() * 30,
+              pop: npc.type === 'Pop' ? 80 + Math.random()*20 : 50,
+              kpop: npc.type === 'Kpop' ? 80 + Math.random()*20 : 10,
+              rap: npc.type === 'Rap' ? 80 + Math.random()*20 : 10,
+              country: npc.type === 'Country' ? 80 + Math.random()*20 : 10,
+            },
+            popularity: {
+              america: isHighTier ? 70 + Math.random() * 30 : 40 + Math.random() * 30,
+              latinAmerica: isHighTier ? 50 + Math.random() * 30 : 30 + Math.random() * 30,
+              europe: isHighTier ? 60 + Math.random() * 30 : 35 + Math.random() * 30,
+            }
+          }
+        ];
+      })),
       time: {
         startDate: INITIAL_DATE,
         daysPassed: 0
       },
-      releases: [],
+      releases: npcReleases as any,
       merch: [],
       gigs: [],
       grammys: {
@@ -1740,7 +2226,16 @@ Top Generating Song:
                              onClick={async () => {
                                const saved = await localforage.getItem<string>('musician_simulator_save_' + slotId);
                                if (saved) {
-                                  setGameState(JSON.parse(saved));
+                                  const parsedState = JSON.parse(saved);
+                                  if (parsedState && parsedState.releases) {
+                                      parsedState.releases = parsedState.releases.map((r: any) => {
+                                          if (!r.isNPCRelease && r.artistId && NPC_ARTISTS.some(n => n.name === r.artistId)) {
+                                              return { ...r, isNPCRelease: true };
+                                          }
+                                          return r;
+                                      });
+                                  }
+                                  setGameState(parsedState);
                                   setCurrentSaveId(slotId);
                                   setScreen('dashboard');
                                }
@@ -1862,7 +2357,7 @@ Top Generating Song:
         <div className="flex gap-4 md:gap-8 items-center overflow-x-auto pb-2 md:pb-0">
           <div className="flex flex-col items-end shrink-0">
             <span className="text-[10px] uppercase tracking-widest text-white/40">Current Balance</span>
-            <span className="text-xl md:text-2xl font-mono text-green-400">${gameState?.stats.money.toLocaleString()}</span>
+            <span className="text-xl md:text-2xl font-mono text-green-400">${(gameState?.stats?.money || 0).toLocaleString()}</span>
           </div>
           <div className="w-[1px] h-8 bg-white/10 shrink-0"></div>
           <div className="flex flex-col items-end shrink-0">
@@ -1872,7 +2367,7 @@ Top Generating Song:
           <div className="w-[1px] h-8 bg-white/10 shrink-0"></div>
           <div className="flex flex-col items-end shrink-0">
              <span className="text-[10px] uppercase tracking-widest text-white/40">Total Streams</span>
-             <span className="text-xl md:text-2xl font-mono text-blue-400">{gameState?.stats.streams.toLocaleString()}</span>
+             <span className="text-xl md:text-2xl font-mono text-blue-400">{(gameState?.stats?.streams || 0).toLocaleString()}</span>
           </div>
           <div className="w-[1px] h-8 bg-white/10 shrink-0"></div>
           <div className="flex flex-col items-end shrink-0">
@@ -1952,6 +2447,13 @@ Top Generating Song:
               >
                 <Activity className="w-4 h-4" />
                 Platforms
+              </button>
+              <button 
+                onClick={() => { setScreen('labels'); setSidebarOpen(false); }}
+                className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 font-medium transition-colors ${screen === 'labels' ? 'bg-purple-600/20 text-purple-200 border border-purple-500/30' : 'bg-transparent text-white/40 hover:bg-white/5 hover:text-white'}`}
+              >
+                <Star className="w-4 h-4" />
+                Record Labels
               </button>
               <button 
                 onClick={() => { setScreen('charts'); setSidebarOpen(false); }}
@@ -2085,6 +2587,7 @@ Top Generating Song:
              {screen === 'gigs' && <GigsView gameState={gameState!} setGameState={setGameState} currentDate={currentDate} />}
              {screen === 'tour' && <TourView gameState={gameState!} setGameState={setGameState} currentDate={currentDate} />}
              {screen === 'platforms' && <PlatformsView gameState={gameState!} setGameState={setGameState as any} />}
+             {screen === 'labels' && <LabelsView gameState={gameState!} setGameState={setGameState} onClose={() => setScreen('dashboard')} />}
              {screen === 'charts' && <ChartsView gameState={gameState!} onClose={() => setScreen('dashboard')} />}
              {screen === 'settings' && <SettingsView gameState={gameState!} setGameState={setGameState} />}
              {screen === 'plaques' && <PlaquesView gameState={gameState!} />}
@@ -2146,11 +2649,11 @@ Top Generating Song:
              <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
                 <div className="bg-white/5 border border-white/10 rounded-2xl p-4 flex flex-col items-center">
                    <span className="text-[10px] uppercase tracking-widest text-white/40 mb-1">Daily Streams</span>
-                   <span className="text-2xl font-mono text-blue-400">+{dailyReport.dailyStreams.toLocaleString()}</span>
+                   <span className="text-2xl font-mono text-blue-400">+{(dailyReport?.dailyStreams || 0).toLocaleString()}</span>
                 </div>
                 <div className="bg-white/5 border border-white/10 rounded-2xl p-4 flex flex-col items-center">
                    <span className="text-[10px] uppercase tracking-widest text-white/40 mb-1">Daily Sales</span>
-                   <span className="text-2xl font-mono text-purple-400">+{dailyReport.dailySales.toLocaleString()}</span>
+                   <span className="text-2xl font-mono text-purple-400">+{(dailyReport?.dailySales || 0).toLocaleString()}</span>
                 </div>
                 <div className="col-span-2 lg:col-span-1 bg-white/5 border border-white/10 rounded-2xl p-4 flex flex-col items-center">
                    <span className="text-[10px] uppercase tracking-widest text-white/40 mb-1">Revenue</span>
@@ -2364,4 +2867,5 @@ function CreateArtistScreen({ onSubmit }: { onSubmit: (data: GameState['artist']
     </div>
   );
 }
+
 

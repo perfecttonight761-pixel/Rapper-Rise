@@ -13,11 +13,17 @@ export function generateNominees(gameState: GameState, year: number): GrammysCat
   const playerSingles = playerReleases.filter(r => r.type === 'Single');
   const playerAlbums = playerReleases.filter(r => r.type === 'Album');
 
-  // Generate NPC data from "previous year" (using a fixed seed for that year)
   const pName = gameState.artist?.name || '';
-  const npcSingles = generateNPCSongs(1.1, previousYear, pName);
-  const npcAlbums = generateNPCAlbums(1.1, previousYear, pName);
   const availableNpcs = NPC_ARTISTS.filter(n => n.name.toLowerCase() !== pName.toLowerCase());
+  
+  const npcReleases = gameState.releases.filter(r => {
+    if (!r.releaseDate || r.status !== 'Published' || !(r as any).isNPCRelease) return false;
+    return new Date(r.releaseDate).getFullYear() === previousYear;
+  });
+  
+  const npcSingles = npcReleases.filter(r => r.type === 'Single').map(r => ({ ...r, artist: (r as any).artistId, points: (r.streams.total || 100) * 1.5 }));
+  const npcAlbums = npcReleases.filter(r => ['Album', 'EP', 'Deluxe Album', 'Single Pack'].includes(r.type)).map(r => ({ ...r, artist: (r as any).artistId, points: (r.streams.total || 100) * 0.8 }));
+
 
   const categories: AwardCategory[] = [
     'Artist of the Year',

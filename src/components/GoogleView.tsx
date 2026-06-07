@@ -119,61 +119,35 @@ function SpotifyCharts({ gameState, onBack, onSelect }: { gameState: GameState, 
   const formattedDaily = currentDateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase();
 
   const chartData = useMemo(() => {
-    const publishedPlayer = gameState.releases.filter(r => r.status === 'Published').map(r => {
+    const allPublished = gameState.releases.filter(r => r.status === 'Published' && r.releaseDate);
+    
+    const combinedData = allPublished.map(r => {
+      const isNPC = !!(r as any).isNPCRelease;
+      const rArtist = isNPC ? (r as any).artistId : gameState.artist?.name;
+
       let daysSinceRelease = 1;
       if (r.releaseDate) {
          daysSinceRelease = Math.max(1, Math.floor((currentDateObj.getTime() - new Date(r.releaseDate).getTime()) / (1000 * 3600 * 24)));
       }
       
-      let dailySpotify = r.lastDailyStreams?.spotify || 0;
-      if (dailySpotify === 0 && (r.streams?.spotify || 0) > 0) {
-          dailySpotify = Math.floor(r.streams!.spotify / daysSinceRelease);
+      let dailySpotify = r.lastDailyStreams?.total || 0;
+      if (dailySpotify === 0 && (r.streams?.total || 0) > 0) {
+          dailySpotify = Math.floor(r.streams!.total / daysSinceRelease);
       }
       
       return {
         ...r,
-        isPlayer: true,
-        artist: gameState.artist?.name || 'Player',
-        totalStreams: r.streams?.spotify || 0,
+        isPlayer: !isNPC,
+        artist: rArtist || 'Unknown',
+        totalStreams: r.streams?.total || 0,
         weeklyStreams: dailySpotify * 7,
         dailyStreams: dailySpotify,
+        coverImage: r.coverImage || ARTIST_IMAGES[rArtist as string] || `https://i.pravatar.cc/200?u=${encodeURIComponent(rArtist || '')}`,
       };
     });
     
-    // NPC streams scale gracefully and realistically
-    const daySeed = Math.floor(gameState.time.daysPassed / 10);
-    const pName = gameState.artist?.name || '';
-    const npcSongs = generateNPCSongs(1, daySeed, pName).map((s, i) => {
-       const fluctuation = 1 + (Math.sin(gameState.time.daysPassed + i) * 0.1);
-       const isHit = i % 10 === 0 ? 3.5 : (i % 3 === 0 ? 0.5 : 1);
-       const daily = Math.floor(s.points * 6 * fluctuation * isHit); // Max around ~8M - 12M daily Spotify streams for big hits
-       return { 
-          ...s, 
-          coverImage: s.coverImage || ARTIST_IMAGES[s.artist as string] || `https://i.pravatar.cc/200?u=${encodeURIComponent(s.artist)}`,
-          totalStreams: daily * (50 + gameState.time.daysPassed % 300), 
-          weeklyStreams: daily * 7, 
-          dailyStreams: daily 
-       };
-    });
-    
-    const npcAlbums = generateNPCAlbums(1, daySeed, pName).map((s, i) => {
-       const fluctuation = 1 + (Math.cos(gameState.time.daysPassed + i) * 0.1);
-       const isHit = i % 8 === 0 ? 3.0 : (i % 3 === 0 ? 0.5 : 1);
-       const daily = Math.floor(s.points * 5 * fluctuation * isHit);
-       return { 
-          ...s, 
-          coverImage: s.coverImage || ARTIST_IMAGES[s.artist as string] || `https://i.pravatar.cc/200?u=${encodeURIComponent(s.artist)}`,
-          totalStreams: daily * (50 + gameState.time.daysPassed % 200), 
-          weeklyStreams: daily * 7, 
-          dailyStreams: daily 
-       };
-    });
-    
-    const playerSongs = publishedPlayer.filter(p => p.type === 'Single');
-    const playerAlbums = publishedPlayer.filter(p => p.type === 'Album');
-    
-    const allSongs = [...playerSongs, ...npcSongs];
-    const allAlbums = [...playerAlbums, ...npcAlbums];
+    const allSongs = combinedData.filter(s => s.type === 'Single');
+    const allAlbums = combinedData.filter(s => ['Album', 'EP', 'Deluxe Album', 'Single Pack'].includes(s.type));
 
     const weeklySongs = [...allSongs].sort((a,b) => b.weeklyStreams - a.weeklyStreams).slice(0, 100);
     const dailySongs = [...allSongs].sort((a,b) => b.dailyStreams - a.dailyStreams).slice(0, 100);
@@ -191,12 +165,12 @@ function SpotifyCharts({ gameState, onBack, onSelect }: { gameState: GameState, 
 
     const dailyArtists = Object.entries(artistMapDaily)
         .map(([name, pts]) => {
-           let finalImage = imgMap[name];
+           let finalImage = ARTIST_IMAGES[name];
            const playerName = gameState.artist?.name || 'Player';
            if (name === playerName || name === 'You') {
-              if (gameState.artist?.image) finalImage = gameState.artist.image;
-              else finalImage = ''; // no fallback to song cover
+              finalImage = gameState.artist?.image || undefined;
            }
+           if (!finalImage) finalImage = imgMap[name]; // fallback to song cover if missing artist image
            return { title: name, artist: name, type: 'Artist', isPlayer: name === playerName || name === 'You', dailyStreams: pts, weeklyStreams: pts * 7, coverImage: finalImage };
         })
         .sort((a,b) => b.dailyStreams - a.dailyStreams)
@@ -377,7 +351,7 @@ function SpotifyList({ type, data, formattedDaily, onBack, onSelect, gameState, 
                 {list.map((item: any, index: number) => {
                    const streamsText = Math.floor(isDaily ? item.dailyStreams : item.weeklyStreams).toLocaleString();
 
-                   const hash = item.title ? item.title.split('').reduce((a: number, b: string) => a + b.charCodeAt(0), 0) : 0;
+                   const hash = item.title ? String(item.title).split('').reduce((a: number, b: string) => a + b.charCodeAt(0), 0) : 0;
                    let daysSinceRelease = 1;
                    if (item.releaseDate) {
                        daysSinceRelease = Math.max(0, Math.floor((currentDateObj.getTime() - new Date(item.releaseDate).getTime()) / (1000 * 3600 * 24)));
@@ -473,9 +447,9 @@ function ChartCoverImage({ item }: { item: any }) {
    
    // Generate fallback cover
    const isArtist = item?.type === 'Artist';
-   const hash = item?.title ? item.title.split('').reduce((a: number,b: string) => a + b.charCodeAt(0), 0) : 0;
+   const hash = item?.title ? String(item.title).split('').reduce((a: number,b: string) => a + b.charCodeAt(0), 0) : 0;
    const hue = hash % 360;
-   const initials = item?.title?.substring(0, 2).toUpperCase() || 'NA';
+   const initials = item?.title ? String(item.title).substring(0, 2).toUpperCase() : 'NA';
    
    return (
       <div 
@@ -485,7 +459,7 @@ function ChartCoverImage({ item }: { item: any }) {
            fontSize: isArtist ? '20px' : '10px'
         }}
       >
-        {isArtist ? initials : <div className="truncate w-full">{item.artist}</div>}
+        {isArtist ? initials : <div className="truncate w-full">{item?.artist || 'Unknown'}</div>}
       </div>
    );
 }
@@ -498,7 +472,7 @@ function SpotifyDetail({ item, isDaily, gameState, onBack }: { item: any, isDail
   const streamLabel = isDaily ? "Daily Streams" : "Weekly Streams";
 
   // Compute a generated first entry date for NPCs based on current date minus some hash
-  const hash = item.title ? item.title.split('').reduce((a: number, b: string) => a + b.charCodeAt(0), 0) : 0;
+  const hash = item?.title ? String(item.title).split('').reduce((a: number, b: string) => a + b.charCodeAt(0), 0) : 0;
   
   let entryDateStr = 'N/A';
   let releaseDateStr = 'N/A';

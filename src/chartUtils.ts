@@ -14,15 +14,16 @@ export const computeCharts = (gameState: GameState) => {
     const prevWeekFluctuation = 1 + (Math.sin(previousWeekNumber / 10) * 0.05);
     
     const pName = gameState.artist?.name || '';
-    const npcSingles = generateNPCSongs(currentWeekFluctuation, currentWeekNumber, pName);
-    const npcAlbums = generateNPCAlbums(currentWeekFluctuation, currentWeekNumber, pName);
-    const npcSinglesPrev = generateNPCSongs(prevWeekFluctuation, previousWeekNumber, pName);
-    const npcAlbumsPrev = generateNPCAlbums(prevWeekFluctuation, previousWeekNumber, pName);
+    // Removing dynamic generation since they are in gameState.releases
+    // Player and NPC are treated equally below!
 
     const publishedReleases = gameState.releases.filter(r => r.status === 'Published' && r.releaseDate);
 
     const generatePlayerItems = (isPrevWeek: boolean) => {
       return publishedReleases.map(r => {
+        const isNPC = !!(r as any).isNPCRelease;
+        const rArtist = isNPC ? (r as any).artistId : gameState.artist?.name;
+
         // Extrapolate current week's partial data to a full 7 days so it stays competitive with NPCs
         let daysIntoWeek = gameState.time.daysPassed % 7;
         if (daysIntoWeek === 0) daysIntoWeek = 7;
@@ -31,18 +32,29 @@ export const computeCharts = (gameState: GameState) => {
         let weeklySales = isPrevWeek ? (r.lastWeekSales ?? 0) : ((r.currentWeekSales ?? 0) / daysIntoWeek) * 7;
         let weeklyRadio = isPrevWeek ? (r.lastWeekRadio ?? 0) : ((r.currentWeekRadio ?? 0) / daysIntoWeek) * 7;
 
-        // If it's the current week and we don't have accumulated stats yet (very new release), 
-        // fallback to estimating from daily
         if (!isPrevWeek && (!r.currentWeekStreams || r.currentWeekStreams === 0) && r.lastDailyStreams?.total) {
              weeklyStreams = r.lastDailyStreams.total * 7;
              weeklySales = r.sales?.total || 0;
              weeklyRadio = r.currentWeekRadio || 0;
         }
 
-        const totalPop = (gameState.popularity.america + gameState.popularity.latinAmerica + gameState.popularity.europe) || 1;
-        const probAmerica = gameState.popularity.america / totalPop;
-        const probLatin = gameState.popularity.latinAmerica / totalPop;
-        const probEurope = gameState.popularity.europe / totalPop;
+        let probAmerica = 0.33, probLatin = 0.33, probEurope = 0.33;
+        if (isNPC) {
+           const genre = (r as any).genre || 'Pop';
+           const isLatin = genre === 'Latin';
+           const isKpop = genre === 'Kpop';
+           const isEuro = genre === 'Pop' && (rArtist === 'Dua Lipa' || rArtist === 'Ed Sheeran' || rArtist === 'Adele');
+           const isCountry = genre === 'Country';
+           
+           probAmerica = isLatin ? 0.2 : isKpop ? 0.3 : isEuro ? 0.3 : isCountry ? 0.9 : 0.6;
+           probLatin = isLatin ? 0.8 : isKpop ? 0.2 : isEuro ? 0.1 : isCountry ? 0.05 : 0.2;
+           probEurope = isLatin ? 0.2 : isKpop ? 0.3 : isEuro ? 0.8 : isCountry ? 0.05 : 0.4;
+        } else {
+           const totalPop = (gameState.popularity.america + gameState.popularity.latinAmerica + gameState.popularity.europe) || 1;
+           probAmerica = gameState.popularity.america / totalPop;
+           probLatin = gameState.popularity.latinAmerica / totalPop;
+           probEurope = gameState.popularity.europe / totalPop;
+        }
 
         let basePoints = 0;
         let activity = 0;
@@ -61,11 +73,11 @@ export const computeCharts = (gameState: GameState) => {
         return {
           id: r.id,
           title: r.title,
-          artist: Object.hasOwn(r, 'isNPCCollab') && (r as any).isNPCCollab 
+          artist: isNPC ? rArtist : (Object.hasOwn(r, 'isNPCCollab') && (r as any).isNPCCollab 
               ? `${(r as any).collaborator} & ${gameState.artist?.name || 'You'}` 
-              : (r.type === 'Single' && (r as any).collaborator ? `${gameState.artist?.name || 'You'} & ${(r as any).collaborator}` : gameState.artist?.name || 'You'),
+              : (r.type === 'Single' && (r as any).collaborator ? `${gameState.artist?.name || 'You'} & ${(r as any).collaborator}` : gameState.artist?.name || 'You')),
           type: r.type,
-          isPlayer: true,
+          isPlayer: !isNPC,
           coverImage: r.coverImage,
           points: basePoints,
           computedTotal: basePoints,
@@ -121,14 +133,9 @@ export const computeCharts = (gameState: GameState) => {
         });
     };
 
-    const npcsS = npcItemsObj(npcSingles, currentWeekNumber);
-    const npcsA = npcItemsObj(npcAlbums, currentWeekNumber);
-    const npcsSPrev = npcItemsObj(npcSinglesPrev, previousWeekNumber);
-    const npcsAPrev = npcItemsObj(npcAlbumsPrev, previousWeekNumber);
-
-    const getFullCharts = (pItems: any[], nS: any[], nA: any[]) => {
-       const allS = [...pItems.filter((p: any) => p.type === 'Single'), ...nS];
-       const allA = [...pItems.filter((p: any) => p.type === 'Album'), ...nA];
+    const getFullCharts = (pItems: any[]) => {
+       const allS = pItems.filter((p: any) => p.type === 'Single');
+       const allA = pItems.filter((p: any) => ['Album', 'EP', 'Deluxe Album', 'Single Pack'].includes(p.type));
        return {
           Hot100: [...allS].sort((a,b) => b.regionalPoints.america - a.regionalPoints.america).slice(0, 100),
           Global200Single: [...allS].sort((a,b) => b.regionalPoints.global - a.regionalPoints.global).slice(0, 200),
@@ -139,8 +146,8 @@ export const computeCharts = (gameState: GameState) => {
        };
     };
 
-    const currentCharts = getFullCharts(playerItems, npcsS, npcsA);
-    const previousCharts = getFullCharts(playerItemsPrev, npcsSPrev, npcsAPrev);
+    const currentCharts = getFullCharts(playerItems);
+    const previousCharts = getFullCharts(playerItemsPrev);
 
     const chartsWithMovement: Record<keyof ReturnType<typeof getFullCharts>, any[]> = {} as any;
     

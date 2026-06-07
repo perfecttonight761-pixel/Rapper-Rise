@@ -49,7 +49,7 @@ export function ChartsView({ gameState, onClose }: ChartsViewProps) {
   const newsItems = useMemo(() => {
      const hot100 = chartsData.charts['Hot100'] || [];
      const bb200 = chartsData.charts['Global200Album'] || [];
-     const playerReleases = gameState.releases.filter(r => r.status === 'Published');
+     const playerReleases = gameState.releases.filter(r => !(r as any).isNPCRelease && r.status === 'Published');
      const latestPlayerRelease = playerReleases[playerReleases.length - 1];
      
      const news: { title: string, image?: string, tag?: string }[] = [];

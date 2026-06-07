@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { GameState, TikTokPost, TikTokSound } from '../types';
 import { Search, User, Compass, MessageCircle, Heart, Share2, Play, Bookmark, Music, Zap, ChevronLeft, Mic, Bell, Send, UserPlus, FileText, Camera, Image as ImageIcon, Pin, Settings } from 'lucide-react';
+import { RECORD_LABELS } from '../recordLabels';
 
 const TikTokVerifiedBadge = ({ className = "w-5 h-5 flex-shrink-0" }: { className?: string }) => (
     <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -142,7 +143,14 @@ export function TikTokView({ gameState, setGameState, onClose }: TikTokViewProps
   };
 
   const handleStartCampaign = (soundId: string) => {
-      const cost = promotionRegions * 200000;
+      let cost = promotionRegions * 200000;
+      
+      const labelId = gameState.artist?.labelContract?.labelId;
+      const currentLabel = RECORD_LABELS.find(l => l.id === labelId);
+      if (currentLabel?.benefits.freeTikTokPromo) {
+          cost = 0;
+      }
+      
       if (gameState.stats.money < cost) return;
 
       setGameState(prev => {
@@ -561,9 +569,18 @@ export function TikTokView({ gameState, setGameState, onClose }: TikTokViewProps
                                     A 7-day TikTok campaign to artificially push this sound in {promotionRegions} regions. Afterward, we will evaluate its natural virality to see if it becomes a TikTok Trend, Hits, or Mega Hits.
                                  </div>
                                  
-                                 <button onClick={() => handleStartCampaign(campaignSoundId)} disabled={gameState.stats.money < promotionRegions * 200000} className="w-full mt-4 bg-gradient-to-r from-[#FE2C55] to-[#20D5EC] text-white rounded-[16px] p-5 text-center transition-all active:scale-[0.98] relative overflow-hidden shadow-lg disabled:opacity-50 disabled:grayscale">
+                                 <button 
+                                     onClick={() => handleStartCampaign(campaignSoundId)} 
+                                     disabled={gameState.stats.money < promotionRegions * 200000 && !RECORD_LABELS.find(l => l.id === gameState.artist?.labelContract?.labelId)?.benefits.freeTikTokPromo} 
+                                     className="w-full mt-4 bg-gradient-to-r from-[#FE2C55] to-[#20D5EC] text-white rounded-[16px] p-5 text-center transition-all active:scale-[0.98] relative overflow-hidden shadow-lg disabled:opacity-50 disabled:grayscale"
+                                 >
                                       <h3 className="font-bold text-[20px] text-white mb-2 flex items-center justify-center gap-2">Start Campaign <Zap className="w-5 h-5 fill-white" /></h3>
-                                      <div className="font-black text-white text-xl bg-black/20 rounded-full inline-block px-4 py-1">${formatNumberSafely(promotionRegions * 200000)}</div>
+                                      <div className="font-black text-white text-xl bg-black/20 rounded-full inline-block px-4 py-1">
+                                         {RECORD_LABELS.find(l => l.id === gameState.artist?.labelContract?.labelId)?.benefits.freeTikTokPromo 
+                                            ? 'FREE (Label Paid)' 
+                                            : `$${formatNumberSafely(promotionRegions * 200000)}`
+                                         }
+                                      </div>
                                  </button>
                             </div>
                         </>
@@ -657,7 +674,7 @@ export function TikTokView({ gameState, setGameState, onClose }: TikTokViewProps
                                     </div>
                                </div>
                                
-                               {gameState.releases.filter(r => r.type === 'Single').slice(0,20).map(song => (
+                               {gameState.releases.filter(r => r.type === 'Single' && !(r as any).isNPCRelease).slice(0,20).map(song => (
                                     <div 
                                         key={song.id}
                                         className={`flex items-center gap-3 p-4 cursor-pointer transition-colors border-b border-gray-100 ${selectedSongId === song.id ? 'bg-[#20D5EC]/10' : 'hover:bg-gray-50'}`}

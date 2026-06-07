@@ -29,6 +29,7 @@ export function ChartHistoryView({ gameState, onClose }: ChartHistoryViewProps) 
     
     // Extrapolate all entries from all releases the player has released that made it to this chart
     const entries = gameState.releases
+      .filter(r => !(r as any).isNPCRelease)
       .filter(r => r.chartHistory && r.chartHistory[activeChart])
       .map(r => {
          const hist = r.chartHistory![activeChart];

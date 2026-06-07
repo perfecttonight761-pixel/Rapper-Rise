@@ -33,6 +33,7 @@ export function GrammysView({ gameState, setGameState }: GrammysViewProps) {
   };
 
   const eligibleReleases = gameState.releases.filter(r => {
+    if ((r as any).isNPCRelease) return false;
     if (r.status !== 'Published' || !r.releaseDate) return false;
     const releaseYear = new Date(r.releaseDate).getFullYear();
     return releaseYear === grammys.year - 1;

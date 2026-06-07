@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { GameState, Release, Song, Album, Video } from '../types';
-import { ChevronRight, Play, MoreVertical, Disc, User, ChevronLeft } from 'lucide-react';
-import { generateNPCSongs, generateNPCAlbums } from '../constants';
+import { ChevronRight, Play, MoreVertical, Disc, User, ChevronLeft, Search, Home } from 'lucide-react';
+import { NPC_ARTISTS } from '../constants';
+import { ARTIST_PICS } from '../artistPics';
+import { ARTIST_IMAGES } from '../artistImages';
 
 interface YouTubeMusicViewProps {
    gameState: GameState;
@@ -9,10 +11,13 @@ interface YouTubeMusicViewProps {
 
 export function YouTubeMusicView({ gameState }: YouTubeMusicViewProps) {
     const [selectedRelease, setSelectedRelease] = useState<Release | null>(null);
-    const [youtubeMusicTab, setYoutubeMusicTab] = useState<'profile' | 'charts'>('profile');
+    const [youtubeMusicTab, setYoutubeMusicTab] = useState<'home' | 'profile' | 'charts'>('home');
     const [youtubeMusicChart, setYoutubeMusicChart] = useState<'global_song' | 'global_album' | 'america' | 'europe' | 'latin_america' | null>(null);
+    const [viewArtist, setViewArtist] = useState<string | null>(null);
+    const [chartSearchQuery, setChartSearchQuery] = useState('');
 
-    const publishedReleases = gameState.releases.filter(r => r.status === 'Published');
+
+    const publishedReleases = gameState.releases.filter(r => !(r as any).isNPCRelease && r.status === 'Published');
     
     const isProject = (type: string) => ['Album', 'EP', 'Single Pack', 'Deluxe Album'].includes(type);
     const projects = publishedReleases.filter(r => isProject(r.type));
@@ -26,6 +31,34 @@ export function YouTubeMusicView({ gameState }: YouTubeMusicViewProps) {
     const allTracks = publishedReleases.filter(r => r.type === 'Single') as Song[];
     const videos = gameState.videos || [];
 
+    const currentDateObj = new Date(gameState.time.startDate);
+    currentDateObj.setDate(currentDateObj.getDate() + gameState.time.daysPassed);
+    const currentDateStr = currentDateObj.toISOString();
+
+    const npcVideos: Video[] = gameState.releases
+      .filter(r => (r as any).isNPCRelease && r.status === 'Published' && r.type === 'Single' && !(r as any).isBSide)
+      .map(r => {
+          const hash = (r.title.charCodeAt(0) || 0) + (r.title.charCodeAt(r.title.length - 1) || 0) + r.title.length;
+          const mvMultiplier = 0.5 + ((hash % 20) / 10);
+          const daysSincePublished = Math.max(1, Math.floor((currentDateObj.getTime() - new Date(r.releaseDate || gameState.time.startDate).getTime()) / (1000 * 3600 * 24)));
+          const totalAudio = r.streams?.youtubeMusic || 100000;
+          const avgDailyAudio = totalAudio / daysSincePublished;
+          const mvIntegral = avgDailyAudio * 2.5 * (daysSincePublished + 14);
+          const views = Math.floor(mvIntegral * mvMultiplier);
+          return {
+              id: `vid_npc_${r.id}`,
+              songId: r.id,
+              title: `${(r as any).artistId} - ${r.title} (Official Music Video)`,
+              type: 'MusicVideo',
+              publishDate: r.releaseDate || currentDateStr,
+              views: views || 0,
+              dailyViews: Math.floor((r.lastDailyStreams?.youtubeMusic || avgDailyAudio) * 2.5 * mvMultiplier) || 0,
+              budget: 0,
+              thumbnail: r.coverImage
+          } as Video;
+      });
+    const allVideos = [...videos, ...npcVideos];
+
     const handleSelectRelease = (rel: Release) => {
         if (rel.type === 'Single' && (rel as Song).isBSide) {
             const parentAlbum = projects.find(a => (a as Album).trackIds.includes(rel.id));
@@ -38,9 +71,10 @@ export function YouTubeMusicView({ gameState }: YouTubeMusicViewProps) {
     };
 
     const getSongYTMusicStreams = (song: Song) => {
-        const audioStreams = song.streams.youtubeMusic || 0;
-        const mvViews = videos.filter(v => v.songId === song.id).reduce((acc, v) => acc + v.views, 0);
-        return audioStreams + mvViews;
+        const isNPC = (song as any).isNPCRelease;
+        const audioStreams = song.streams?.youtubeMusic || (isNPC ? (song.lastDailyStreams?.total || Math.random() * 500000) * 12.5 : 0);
+        const mvViews = allVideos.filter(v => v.songId === song.id).reduce((acc, v) => acc + v.views, 0);
+        return Math.floor(audioStreams + mvViews);
     };
 
     const getPlatformStreams = (release: Release): number => {
@@ -64,15 +98,34 @@ export function YouTubeMusicView({ gameState }: YouTubeMusicViewProps) {
         topSongsChunks.push(topSongs.slice(i, i + 4));
     }
 
-    const formatViews = (views: number) => {
-        if (views >= 1000000000) {
-           return (views / 1000000000).toLocaleString('en-US', { maximumFractionDigits: 1 }) + ' B';
-        } else if (views >= 1000000) {
-           return (views / 1000000).toLocaleString('en-US', { maximumFractionDigits: 1 }) + ' M';
-        } else if (views >= 1000) {
-           return (views / 1000).toLocaleString('en-US', { maximumFractionDigits: 0 }) + ' K';
+    const currentArtistName = viewArtist || gameState.artist?.name || 'You';
+    const currentArtistImage = viewArtist ? (ARTIST_IMAGES[viewArtist as keyof typeof ARTIST_IMAGES] || ARTIST_PICS[viewArtist as keyof typeof ARTIST_PICS] || null) : gameState.artist.image;
+
+    const currentPublishedReleases = viewArtist 
+        ? gameState.releases.filter(r => r.status === 'Published' && (r as any).isNPCRelease && (r as any).artistId === viewArtist) 
+        : gameState.releases.filter(r => !(r as any).isNPCRelease && r.status === 'Published');
+    
+    const currentProjects = currentPublishedReleases.filter(r => isProject(r.type));
+
+    const currentSongs = currentPublishedReleases.filter(r => r.type === 'Single' && !(r as Song).isBSide) as Song[];
+    const currentAlbums = currentPublishedReleases.filter(r => ['Album', 'Deluxe Album'].includes(r.type)) as Album[];
+    const currentEpsAndSinglePacks = currentPublishedReleases.filter(r => ['EP', 'Single Pack'].includes(r.type)) as Album[];
+    const currentSinglesAndEPs = [...currentEpsAndSinglePacks, ...currentSongs];
+    const currentAllTracks = currentPublishedReleases.filter(r => r.type === 'Single') as Song[];
+    
+    const calculateNPCListeners = (artistId: string) => {
+        let dailyStreams = 0;
+        const npcRels = gameState.releases.filter(r => r.status === 'Published' && (r as any).artistId === artistId);
+        npcRels.forEach(r => dailyStreams += (r.lastDailyStreams?.total || 0));
+        return Math.floor(dailyStreams * 8.5) || Math.floor(Math.random() * 5000000 + 1000000);
+    };
+
+    const getSubscribers = () => {
+        if (gameState.stats.youtubeSubscribers !== undefined) {
+           return gameState.stats.youtubeSubscribers;
         }
-        return views.toLocaleString('en-US');
+        const totalPop = (gameState.popularity.america + gameState.popularity.europe + gameState.popularity.latinAmerica) / 3;
+        return Math.floor(gameState.stats.streams * 0.05 + totalPop * 10000);
     };
 
     // calculate monthly listeners based on Daily Youtube Streams + Daily Audio Streams
@@ -104,12 +157,29 @@ export function YouTubeMusicView({ gameState }: YouTubeMusicViewProps) {
         return rawListeners;
     };
 
-    const getSubscribers = () => {
-        if (gameState.stats.youtubeSubscribers !== undefined) {
-           return gameState.stats.youtubeSubscribers;
+    const currentListeners = viewArtist ? calculateNPCListeners(viewArtist) : calculateListeners();
+    const currentSubscribers = viewArtist ? Math.floor(currentListeners * 0.3) : getSubscribers();
+
+    const getCurrentTopSongs = () => {
+        return [...currentAllTracks].sort((a, b) => getSongYTMusicStreams(b) - getSongYTMusicStreams(a)).slice(0, 20);
+    };
+    const currentTopSongs = getCurrentTopSongs();
+    const currentTopSongsChunks: Song[][] = [];
+    for (let i = 0; i < currentTopSongs.length; i += 4) {
+        currentTopSongsChunks.push(currentTopSongs.slice(i, i + 4));
+    }
+    const currentVideos = viewArtist ? allVideos.filter(v => gameState.releases.find(s => s.id === v.songId && (s as any).artistId === viewArtist)) : videos.filter(v => allTracks.find(s => s.id === v.songId));
+
+
+    const formatViews = (views: number) => {
+        if (views >= 1000000000) {
+           return (views / 1000000000).toLocaleString('en-US', { maximumFractionDigits: 1 }) + ' B';
+        } else if (views >= 1000000) {
+           return (views / 1000000).toLocaleString('en-US', { maximumFractionDigits: 1 }) + ' M';
+        } else if (views >= 1000) {
+           return (views / 1000).toLocaleString('en-US', { maximumFractionDigits: 0 }) + ' K';
         }
-        const totalPop = (gameState.popularity.america + gameState.popularity.europe + gameState.popularity.latinAmerica) / 3;
-        return Math.floor(gameState.stats.streams * 0.05 + totalPop * 10000);
+        return views.toLocaleString('en-US');
     };
 
     const singlesAndEPs = [...epsAndSinglePacks, ...songs];
@@ -125,13 +195,20 @@ export function YouTubeMusicView({ gameState }: YouTubeMusicViewProps) {
     const currentWeekNumber = Math.max(1, Math.floor(gameState.time.daysPassed / 7)); 
     const currentWeekFluctuation = 1 + (Math.sin(currentWeekNumber / 10) * 0.05);
     const pName = gameState.artist?.name || '';
-    const getArtistStr = (r: any) => r ? (r.isNPCCollab ? `${r.collaborator} & ${pName}` : (r.type === 'Single' && r.collaborator ? `${pName} & ${r.collaborator}` : pName)) : pName;
-    const npcSingles = generateNPCSongs(currentWeekFluctuation, currentWeekNumber, pName);
-    const npcAlbums = generateNPCAlbums(currentWeekFluctuation, currentWeekNumber, pName);
+    const getArtistStr = (r: any) => r ? (r.isNPCRelease ? r.artistId : r.isNPCCollab ? `${r.collaborator} & ${pName}` : (r.type === 'Single' && r.collaborator ? `${pName} & ${r.collaborator}` : pName)) : pName;
 
-    const currentDateObj = new Date(gameState.time.startDate);
-    currentDateObj.setDate(currentDateObj.getDate() + gameState.time.daysPassed);
-    const currentDateStr = currentDateObj.toISOString();
+    const npcSingles = gameState.releases.filter(r => r.type === 'Single' && r.status === 'Published' && (r as any).isNPCRelease).map(s => ({
+        ...s,
+        artist: (s as any).artistId,
+        points: (s.lastDailyStreams?.youtubeMusic || 0) + (Math.random() * 100) // Fallback points mapping
+    }));
+    const npcAlbums = gameState.releases.filter(r => ['Album', 'EP', 'Deluxe Album', 'Single Pack'].includes(r.type) && r.status === 'Published' && (r as any).isNPCRelease).map(a => ({
+        ...a,
+        artist: (a as any).artistId,
+        points: (a.lastDailyStreams?.youtubeMusic || 0) + (Math.random() * 100)
+    }));
+
+    // Removed redeclaration
 
     const getYoutubeSongsChart = (region: 'global' | 'america' | 'europe' | 'latin_america') => {
         const playerItems = allTracks.map(s => {
@@ -146,8 +223,7 @@ export function YouTubeMusicView({ gameState }: YouTubeMusicViewProps) {
 
         const npcItems = npcSingles.map(npc => {
             const hash = (npc.title.charCodeAt(0) || 0) + (npc.artist.charCodeAt(0) || 0);
-            const platformMulti = 0.5 + (((hash * 11) % 13) / 10);
-            let streams = Math.floor(npc.points * 3 * platformMulti); 
+            let streams = npc.points; 
             
             const amFactor = 0.5 + ((hash % 11) / 10);
             const euFactor = 0.5 + (((hash + 3) % 11) / 10);
@@ -171,9 +247,7 @@ export function YouTubeMusicView({ gameState }: YouTubeMusicViewProps) {
     });
     
     const npcAlbumsList = npcAlbums.map(npc => {
-        const hash = (npc.title.charCodeAt(0) || 0) + (npc.artist.charCodeAt(0) || 0);
-        const platformMulti = 0.5 + (((hash * 11) % 13) / 10);
-        let streams = Math.floor(npc.points * 2 * platformMulti); 
+        let streams = npc.points; 
         return { album: npc, streams, artist: npc.artist, isPlayer: false };
     });
 
@@ -181,12 +255,159 @@ export function YouTubeMusicView({ gameState }: YouTubeMusicViewProps) {
 
     return (
         <div className="bg-[#030303] text-white min-h-screen font-sans pb-32 overflow-x-hidden relative">
-            {youtubeMusicTab === 'profile' ? (
+            {youtubeMusicTab === 'home' ? (
+                <div className="flex flex-col min-h-screen pt-12 pb-24 px-4 md:px-12 text-left">
+                    <h1 className="text-3xl font-bold mb-6">Home</h1>
+                    <div className="flex gap-4 overflow-x-auto hide-scrollbar pb-8 snap-x">
+                        <div className="min-w-[160px] bg-white/5 rounded-xl p-4 flex flex-col justify-center items-center gap-2 cursor-pointer hover:bg-white/10 transition-colors">
+                            <Disc className="w-12 h-12 text-white/50" />
+                            <span className="font-bold text-center">My Supermix</span>
+                            <span className="text-xs text-white/50 text-center">Endless music based on what you listen to</span>
+                        </div>
+                        <div className="min-w-[160px] bg-white/5 rounded-xl p-4 flex flex-col justify-center items-center gap-2 cursor-pointer hover:bg-white/10 transition-colors">
+                            <svg className="w-12 h-12 text-white/50" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+                            <span className="font-bold text-center">Your Likes</span>
+                            <span className="text-xs text-white/50 text-center">Music you've liked</span>
+                        </div>
+                        {NPC_ARTISTS.slice(0, 3).map((npc, i) => (
+                            <div key={npc.name} onClick={() => { setViewArtist(npc.name); setYoutubeMusicTab('profile'); }} className="min-w-[160px] bg-white/5 rounded-xl flex flex-col gap-2 cursor-pointer hover:bg-white/10 transition-colors overflow-hidden group">
+                                <div className="h-24 bg-[#212121] overflow-hidden">
+                                     {ARTIST_IMAGES[npc.name as keyof typeof ARTIST_IMAGES] || ARTIST_PICS[npc.name as keyof typeof ARTIST_PICS] ? (
+                                        <img src={ARTIST_IMAGES[npc.name as keyof typeof ARTIST_IMAGES] || ARTIST_PICS[npc.name as keyof typeof ARTIST_PICS]} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                                     ) : (
+                                        <div className="w-full h-full flex items-center justify-center bg-gray-800">
+                                            <User className="w-8 h-8 text-white/30" />
+                                        </div>
+                                     )}
+                                </div>
+                                <div className="p-3 pt-0">
+                                    <span className="font-bold text-sm line-clamp-1 mt-1">{npc.name} Mix</span>
+                                    <span className="text-xs text-white/50 text-center line-clamp-1">Custom playlist</span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    <h2 className="text-2xl font-bold mb-4">Quick picks</h2>
+                    <div className="flex gap-4 overflow-x-auto hide-scrollbar pb-8 snap-x">
+                        {topSongsChunks.slice(0, 2).map((chunk, i) => (
+                            <div key={i} className="flex flex-col gap-2 min-w-[300px] md:min-w-[400px] w-[85vw] md:w-[400px] snap-start shrink-0">
+                                {chunk.map((song) => (
+                                    <div key={song.id} onClick={() => handleSelectRelease(song)} className="flex items-center gap-3 p-2 rounded-md hover:bg-white/10 group cursor-pointer transition-colors">
+                                        <div className="w-12 h-12 bg-[#212121] rounded shrink-0 overflow-hidden relative">
+                                            {song.coverImage ? <img src={song.coverImage || undefined} className="w-full h-full object-cover" /> : null}
+                                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                                <Play className="w-5 h-5 text-white fill-current" />
+                                            </div>
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <h3 className="text-base font-medium truncate group-hover:underline">{song.title}</h3>
+                                            <p className="text-white/60 text-[13px] truncate">{getArtistStr(song)} • {formatViews(getSongYTMusicStreams(song))} streams</p>
+                                        </div>
+                                        <button className="p-2 opacity-0 group-hover:opacity-100 text-white/50 hover:text-white transition-all">
+                                            <MoreVertical className="w-5 h-5" />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        ))}
+                    </div>
+
+                    {topSongsChunks.length > 2 && (
+                        <>
+                            <h2 className="text-2xl font-bold mb-4">Listen again</h2>
+                            <div className="flex gap-4 overflow-x-auto hide-scrollbar pb-8 snap-x">
+                                {topSongsChunks.slice(2, 4).map((chunk, i) => (
+                                    <div key={i} className="flex flex-col gap-2 min-w-[300px] md:min-w-[400px] w-[85vw] md:w-[400px] snap-start shrink-0">
+                                        {chunk.map((song) => (
+                                            <div key={song.id} onClick={() => handleSelectRelease(song)} className="flex items-center gap-3 p-2 rounded-md hover:bg-white/10 group cursor-pointer transition-colors">
+                                                <div className="w-12 h-12 bg-[#212121] rounded shrink-0 overflow-hidden relative">
+                                                    {song.coverImage ? <img src={song.coverImage || undefined} className="w-full h-full object-cover" /> : null}
+                                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                                        <Play className="w-5 h-5 text-white fill-current" />
+                                                    </div>
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <h3 className="text-base font-medium truncate group-hover:underline">{song.title}</h3>
+                                                    <p className="text-white/60 text-[13px] truncate">{getArtistStr(song)} • {formatViews(getSongYTMusicStreams(song))} streams</p>
+                                                </div>
+                                                <button className="p-2 opacity-0 group-hover:opacity-100 text-white/50 hover:text-white transition-all">
+                                                    <MoreVertical className="w-5 h-5" />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ))}
+                            </div>
+                        </>
+                    )}
+
+                    <h2 className="text-2xl font-bold mb-4">Recommended music videos</h2>
+                    <div className="flex gap-4 overflow-x-auto hide-scrollbar pb-8 snap-x">
+                        {[...allVideos].sort((a,b) => b.views - a.views).slice(0, 10).map((video) => {
+                            const song = allTracks.find(s => s?.id === video.songId) || gameState.releases.find(r => r.id === video.songId) as Song;
+                            if (!song) return null;
+                            return (
+                                <div key={video.id} className="flex flex-col w-[260px] md:w-[320px] snap-start shrink-0 group cursor-pointer">
+                                    <div className="w-full aspect-video bg-[#212121] rounded-xl overflow-hidden relative mb-3 border border-white/10">
+                                        {video.thumbnail || song.coverImage ? <img src={video.thumbnail || song.coverImage || undefined} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" /> : null}
+                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                            <div className="w-12 h-12 rounded-full bg-black/60 flex items-center justify-center">
+                                                <Play className="w-6 h-6 text-white fill-current ml-1" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <h3 className="font-medium text-base truncate group-hover:underline">{video.title}</h3>
+                                    <p className="text-white/60 text-sm truncate">{getArtistStr(song)} • {formatViews(video.views)} views</p>
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    <h2 className="text-2xl font-bold mb-4">New releases</h2>
+                    <div className="flex gap-4 overflow-x-auto hide-scrollbar pb-8 snap-x">
+                        {[...combinedAlbumsList].sort((a,b) => new Date(b.album.releaseDate || 0).getTime() - new Date(a.album.releaseDate || 0).getTime()).slice(0, 6).map((item) => (
+                            <div key={item.album.id} onClick={() => { if(item.isPlayer) { handleSelectRelease(item.album as Release); } else { setViewArtist(item.artist); setYoutubeMusicTab('profile'); } }} className="flex flex-col w-[160px] md:w-[200px] snap-start shrink-0 group cursor-pointer">
+                                <div className="w-full aspect-square bg-[#212121] rounded-xl overflow-hidden relative mb-3 border border-white/10">
+                                    {item.album.coverImage ? <img src={item.album.coverImage || undefined} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" /> : <Disc className="w-12 h-12 text-white/20 m-auto mt-16 md:mt-24" />}
+                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                        <Play className="w-10 h-10 text-white fill-current" />
+                                    </div>
+                                </div>
+                                <h3 className="font-medium text-base leading-tight truncate group-hover:underline mb-1">{item.album.title}</h3>
+                                <p className="text-white/60 text-sm truncate">{item.artist}</p>
+                            </div>
+                        ))}
+                    </div>
+
+                    <h2 className="text-2xl font-bold mb-4">Community Playlists</h2>
+                    <div className="flex gap-4 overflow-x-auto hide-scrollbar pb-8 snap-x">
+                        {[...NPC_ARTISTS].reverse().slice(0, 6).map((npc, i) => (
+                            <div key={`playlist-${i}`} onClick={() => { setViewArtist(npc.name); setYoutubeMusicTab('profile'); }} className="flex flex-col w-[160px] md:w-[200px] snap-start shrink-0 group cursor-pointer">
+                                <div className="w-full aspect-square bg-[#212121] rounded-xl overflow-hidden relative mb-3 border border-white/10">
+                                    <div className="absolute inset-0 grid grid-cols-2 grid-rows-2">
+                                         {/* Simple mosaic pattern for community playlist covers */}
+                                         <div className="bg-[#111] w-full h-full border-r border-b border-black/50 overflow-hidden"><img src={npcAlbums[i]?.coverImage || `https://i.pravatar.cc/200?u=${encodeURIComponent(npc.name + '1')}`} className="w-full h-full object-cover opacity-80" /></div>
+                                         <div className="bg-[#222] w-full h-full border-b border-black/50 overflow-hidden"><img src={`https://i.pravatar.cc/200?u=${encodeURIComponent(npc.name + '2')}`} className="w-full h-full object-cover opacity-80" /></div>
+                                         <div className="bg-[#1a1a1a] w-full h-full border-r border-black/50 overflow-hidden"><img src={`https://i.pravatar.cc/200?u=${encodeURIComponent(npc.name + '3')}`} className="w-full h-full object-cover opacity-80" /></div>
+                                         <div className="bg-[#0f0f0f] w-full h-full overflow-hidden"><img src={`https://i.pravatar.cc/200?u=${encodeURIComponent(npc.name + '4')}`} className="w-full h-full object-cover opacity-80" /></div>
+                                    </div>
+                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                        <Play className="w-10 h-10 text-white fill-current" />
+                                    </div>
+                                </div>
+                                <h3 className="font-medium text-base leading-tight truncate group-hover:underline mb-1">{npc.name}'s Favorites</h3>
+                                <p className="text-white/60 text-sm truncate">By {npc.name}</p>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            ) : youtubeMusicTab === 'profile' ? (
             <>
             {/* Header Hero */}
             <div className="relative h-[24rem] md:h-[28rem] flex flex-col justify-end p-6 md:p-12 overflow-hidden shrink-0">
-               {gameState.artist.image ? (
-                  <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${gameState.artist.image})` }}></div>
+               {currentArtistImage ? (
+                  <div className="absolute inset-0 bg-cover bg-top" style={{ backgroundImage: `url(${currentArtistImage})` }}></div>
                ) : (
                   <div className="absolute inset-0 bg-[#121212] flex items-center justify-center">
                      <User className="w-32 h-32 text-white/10" />
@@ -194,12 +415,12 @@ export function YouTubeMusicView({ gameState }: YouTubeMusicViewProps) {
                )}
                <div className="absolute inset-0 bg-gradient-to-t from-[#030303] via-[#030303]/60 to-transparent"></div>
                <div className="relative z-10 flex flex-col items-start pt-[50%]">
-                  <h1 className="text-4xl md:text-6xl font-black mb-1">{gameState.artist.name}</h1>
-                  <p className="text-white/60 font-medium text-sm mb-4">{formatViews(calculateListeners())} monthly listeners</p>
+                  <h1 className="text-4xl md:text-6xl font-black mb-1">{currentArtistName}</h1>
+                  <p className="text-white/60 font-medium text-sm mb-4">{formatViews(currentListeners)} monthly listeners</p>
                   
                   <div className="flex items-center w-full justify-between">
                      <button className="px-4 py-2 hover:bg-gray-200 bg-white text-black rounded-full font-medium text-sm transition-colors flex items-center gap-2">
-                        Subscribe <span className="text-black/70">{formatViews(getSubscribers())}</span>
+                        Subscribe <span className="text-black/70">{formatViews(currentSubscribers)}</span>
                      </button>
                      <div className="flex items-center gap-2">
                         <button className="w-11 h-11 bg-white/10 hover:bg-white/20 text-white rounded-full flex items-center justify-center shrink-0">
@@ -224,14 +445,14 @@ export function YouTubeMusicView({ gameState }: YouTubeMusicViewProps) {
             <div className="px-4 md:px-12 mt-6 flex flex-col gap-10">
 
                 {/* Top Songs */}
-                {topSongsChunks.length > 0 && (
+                {currentTopSongsChunks.length > 0 && (
                     <section>
                         <div className="flex items-center justify-between mb-4">
                             <h2 className="text-xl md:text-2xl font-bold">Top songs</h2>
                             <button className="px-3 py-1 border border-white/20 rounded-full text-xs font-medium hover:bg-white/10 transition-colors">Play all</button>
                         </div>
                         <div className="flex gap-4 overflow-x-auto hide-scrollbar pb-4 snap-x">
-                            {topSongsChunks.map((chunk, i) => (
+                            {currentTopSongsChunks.map((chunk, i) => (
                                 <div key={i} className="flex flex-col gap-2 min-w-[300px] md:min-w-[400px] w-[85vw] md:w-[400px] snap-start shrink-0">
                                     {chunk.map((song) => (
                                         <div key={song.id} onClick={() => handleSelectRelease(song)} className="flex items-center gap-3 p-2 rounded-md hover:bg-white/10 group cursor-pointer transition-colors">
@@ -257,14 +478,14 @@ export function YouTubeMusicView({ gameState }: YouTubeMusicViewProps) {
                 )}
 
                 {/* Albums */}
-                {albums.length > 0 && (
+                {currentAlbums.length > 0 && (
                     <section>
                         <div className="flex items-center justify-between mb-4">
                             <h2 className="text-xl md:text-2xl font-bold">Albums</h2>
                             <ChevronRight className="w-6 h-6 text-white/60" />
                         </div>
                         <div className="flex gap-4 overflow-x-auto hide-scrollbar pb-4 snap-x">
-                            {albums.map((album) => (
+                            {currentAlbums.map((album) => (
                                 <div key={album.id} onClick={() => handleSelectRelease(album)} className="flex flex-col w-[160px] md:w-[200px] snap-start shrink-0 group cursor-pointer">
                                     <div className="w-full aspect-square bg-[#212121] rounded-md overflow-hidden relative mb-3">
                                         {album.coverImage ? <img src={album.coverImage || undefined} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" /> : <Disc className="w-12 h-12 text-white/20 m-auto mt-16 md:mt-24" />}
@@ -283,14 +504,14 @@ export function YouTubeMusicView({ gameState }: YouTubeMusicViewProps) {
                 )}
 
                 {/* Singles */}
-                {singlesAndEPs.length > 0 && (
+                {currentSinglesAndEPs.length > 0 && (
                     <section>
                         <div className="flex items-center justify-between mb-4">
                             <h2 className="text-xl md:text-2xl font-bold">Singles & EPs</h2>
                             <ChevronRight className="w-6 h-6 text-white/60" />
                         </div>
                         <div className="flex gap-4 overflow-x-auto hide-scrollbar pb-4 snap-x">
-                            {[...singlesAndEPs].reverse().map((song) => (
+                            {[...currentSinglesAndEPs].reverse().map((song) => (
                                 <div key={song.id} onClick={() => handleSelectRelease(song)} className="flex flex-col w-[160px] md:w-[200px] snap-start shrink-0 group cursor-pointer">
                                     <div className="w-full aspect-square bg-[#212121] rounded-md overflow-hidden relative mb-3">
                                         {song.coverImage ? <img src={song.coverImage || undefined} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" /> : <Disc className="w-12 h-12 text-white/20 m-auto mt-16 md:mt-24" />}
@@ -309,15 +530,15 @@ export function YouTubeMusicView({ gameState }: YouTubeMusicViewProps) {
                 )}
 
                 {/* Videos */}
-                {videos.length > 0 && (
+                {currentVideos.length > 0 && (
                     <section>
                         <div className="flex items-center justify-between mb-4">
                             <h2 className="text-xl md:text-2xl font-bold">Videos</h2>
                             <ChevronRight className="w-6 h-6 text-white/60" />
                         </div>
                         <div className="flex gap-4 overflow-x-auto hide-scrollbar pb-4 snap-x">
-                            {[...videos].reverse().map((video) => {
-                                const song = songs.find(s => s?.id === video.songId);
+                            {[...currentVideos].reverse().map((video) => {
+                                const song = currentAllTracks.find(s => s?.id === video.songId);
                                 return (
                                     <div key={video.id} className="flex flex-col w-[260px] md:w-[320px] snap-start shrink-0 group cursor-pointer">
                                         <div className="w-full aspect-video bg-[#212121] rounded-md overflow-hidden relative mb-3">
@@ -340,10 +561,9 @@ export function YouTubeMusicView({ gameState }: YouTubeMusicViewProps) {
                 {/* About */}
                 <section className="mb-12">
                     <h2 className="text-xl md:text-2xl font-bold mb-2">About</h2>
-                    <p className="text-white/60 mb-4">{gameState.stats.streams > 0 ? (gameState.stats.streams + videos.reduce((acc, v) => acc + v.views, 0)).toLocaleString('en-US') : 0} views</p>
+                    <p className="text-white/60 mb-4">{currentListeners > 0 ? (currentListeners * 4 + currentVideos.reduce((acc, v) => acc + v.views, 0)).toLocaleString('en-US') : 0} views</p>
                     <p className="text-white/80 leading-relaxed max-w-3xl">
-                        {gameState.artist.name} is a singer, songwriter from {gameState.artist.country}. 
-                        Debuted in {new Date(gameState.time.startDate).getFullYear()} and continues to grow their career in the music industry.
+                        {currentArtistName} is a popular artist in the music industry.
                     </p>
                 </section>
             </div>
@@ -401,24 +621,36 @@ export function YouTubeMusicView({ gameState }: YouTubeMusicViewProps) {
             </>
             ) : (
              <div className="flex flex-col min-h-screen pt-12 pb-24 text-left">
-               <div className="px-4 md:px-8 flex gap-4 md:gap-8 flex-wrap border-b border-white/10 mb-8 sticky top-0 bg-[#030303]/80 backdrop-blur z-20 pt-4">
-                  {(['global_song', 'global_album', 'america', 'europe', 'latin_america'] as const).map(tab => (
-                     <button
-                        key={tab}
-                        onClick={() => setYoutubeMusicChart(tab)}
-                        className={`pb-4 font-bold text-sm md:text-base capitalize transition-colors relative ${youtubeMusicChart === tab ? 'text-white' : 'text-white/60 hover:text-white'}`}
-                     >
-                        {tab.replace('_', ' ')}
-                        {youtubeMusicChart === tab && <div className="absolute bottom-0 left-0 right-0 h-1 bg-white rounded-t" />}
-                     </button>
-                  ))}
+               <div className="px-4 md:px-8 flex flex-col md:flex-row md:items-center justify-between border-b border-white/10 mb-8 sticky top-0 bg-[#030303]/80 backdrop-blur z-20 pt-4 gap-4 pb-2">
+                  <div className="flex gap-4 md:gap-8 overflow-x-auto hide-scrollbar">
+                     {(['global_song', 'global_album', 'america', 'europe', 'latin_america'] as const).map(tab => (
+                        <button
+                           key={tab}
+                           onClick={() => setYoutubeMusicChart(tab)}
+                           className={`pb-4 font-bold text-sm md:text-base capitalize transition-colors relative shrink-0 ${youtubeMusicChart === tab ? 'text-white' : 'text-white/60 hover:text-white'}`}
+                        >
+                           {tab.replace('_', ' ')}
+                           {youtubeMusicChart === tab && <div className="absolute bottom-0 left-0 right-0 h-1 bg-white rounded-t" />}
+                        </button>
+                     ))}
+                  </div>
+                  <div className="relative shrink-0 pb-2 md:pb-4">
+                     <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-white/50" />
+                     <input 
+                        type="text" 
+                        value={chartSearchQuery}
+                        onChange={e => setChartSearchQuery(e.target.value)}
+                        placeholder="Search artists..." 
+                        className="bg-white/10 border border-white/10 rounded-full pl-9 pr-4 py-1.5 text-sm w-full md:w-64 focus:outline-none focus:bg-white/20 transition-colors"
+                     />
+                  </div>
                </div>
 
                <div className="w-full max-w-4xl mx-auto px-4 md:px-8 pb-24">
                   {youtubeMusicChart === 'global_album' ? (
                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
-                         {combinedAlbumsList.map((item, i) => (
-                            <div key={item.album.id} className="flex flex-col group cursor-pointer" onClick={() => { setYoutubeMusicChart(null); if(item.isPlayer) handleSelectRelease(item.album as Release); }}>
+                         {combinedAlbumsList.filter(item => item.artist.toLowerCase().includes(chartSearchQuery.toLowerCase()) || item.album.title.toLowerCase().includes(chartSearchQuery.toLowerCase())).map((item, i) => (
+                            <div key={item.album.id} className="flex flex-col group cursor-pointer" onClick={() => { setYoutubeMusicChart(null); if(item.isPlayer) { handleSelectRelease(item.album as Release); } else { setViewArtist(item.artist); setYoutubeMusicTab('profile'); } }}>
                                <div className="w-full aspect-square bg-[#212121] rounded-xl overflow-hidden mb-3 relative border border-white/10">
                                   {item.album.coverImage ? <img src={item.album.coverImage} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" /> : <Disc className="w-16 h-16 text-white/30 m-auto mt-12" />}
                                   <div className="absolute bottom-2 right-2 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded text-xs font-bold">{i+1}</div>
@@ -430,8 +662,8 @@ export function YouTubeMusicView({ gameState }: YouTubeMusicViewProps) {
                      </div>
                   ) : (
                      <div className="flex flex-col border-t border-white/10">
-                         {getYoutubeSongsChart(youtubeMusicChart as any).map((item, i) => (
-                            <div key={item.song.id} className="flex items-center gap-4 py-3 border-b border-white/10 hover:bg-white/5 px-2 -mx-2 rounded-lg transition-colors cursor-pointer" onClick={() => { setYoutubeMusicChart(null); if(item.isPlayer) handleSelectRelease(item.song as Release); }}>
+                         {getYoutubeSongsChart(youtubeMusicChart as any).filter(item => item.artist.toLowerCase().includes(chartSearchQuery.toLowerCase()) || item.song.title.toLowerCase().includes(chartSearchQuery.toLowerCase())).map((item, i) => (
+                            <div key={item.song.id} className="flex items-center gap-4 py-3 border-b border-white/10 hover:bg-white/5 px-2 -mx-2 rounded-lg transition-colors cursor-pointer" onClick={() => { setYoutubeMusicChart(null); if(item.isPlayer) { handleSelectRelease(item.song as Release); } else { setViewArtist(item.artist); setYoutubeMusicTab('profile'); } }}>
                                <div className="w-12 h-12 bg-[#212121] rounded object-cover shrink-0 overflow-hidden relative">
                                   {item.song.coverImage ? <img src={item.song.coverImage} className="w-full h-full object-cover" /> : <Disc className="m-auto mt-3 text-white/30" />}
                                </div>
@@ -452,17 +684,24 @@ export function YouTubeMusicView({ gameState }: YouTubeMusicViewProps) {
             {/* Bottom Navigation */}
             <div className="fixed bottom-0 left-0 right-0 h-20 bg-[#030303]/90 backdrop-blur-md border-t border-white/10 z-[300] flex justify-around items-center px-4 md:px-24">
                <button 
-                  onClick={() => { setYoutubeMusicChart(null); setYoutubeMusicTab('profile'); }} 
+                  onClick={() => { setYoutubeMusicChart(null); setYoutubeMusicTab('home'); setViewArtist(null); }} 
+                  className={`flex flex-col items-center justify-center w-24 gap-1 ${youtubeMusicTab === 'home' ? 'text-white' : 'text-white/40 hover:text-white/60'}`}
+               >
+                  <Home className="w-6 h-6" />
+                  <span className="text-[10px] font-semibold">Home</span>
+               </button>
+               <button 
+                  onClick={() => { setYoutubeMusicChart(null); setYoutubeMusicTab('profile'); setViewArtist(null); }} 
                   className={`flex flex-col items-center justify-center w-24 gap-1 ${youtubeMusicTab === 'profile' ? 'text-white' : 'text-white/40 hover:text-white/60'}`}
                >
-                  <svg className="w-7 h-7" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+                  <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
                   <span className="text-[10px] font-semibold">Profile</span>
                </button>
                <button 
-                  onClick={() => { setYoutubeMusicChart('global_song'); setYoutubeMusicTab('charts'); }} 
+                  onClick={() => { setYoutubeMusicChart('global_song'); setYoutubeMusicTab('charts'); setViewArtist(null); }} 
                   className={`flex flex-col items-center justify-center w-24 gap-1 ${youtubeMusicTab === 'charts' ? 'text-white' : 'text-white/40 hover:text-white/60'}`}
                >
-                  <svg className="w-7 h-7" fill="currentColor" viewBox="0 0 24 24"><path d="M16 11V3H8v6H2v12h20V11h-6zm-6-6h4v14h-4V5zm-6 6h4v8H4v-8zm16 8h-4v-6h4v6z"/></svg>
+                  <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M16 11V3H8v6H2v12h20V11h-6zm-6-6h4v14h-4V5zm-6 6h4v8H4v-8zm16 8h-4v-6h4v6z"/></svg>
                   <span className="text-[10px] font-semibold">Charts</span>
                </button>
             </div>

@@ -3,6 +3,7 @@ import { Upload, Image as ImageIcon, Music, Check, DollarSign, Calendar } from '
 import { GameState, Genre, Song, Album, ReleaseStatus, DailyReportData } from '../types';
 import { compressImage } from '../imageUtils';
 import { NPC_ARTISTS } from '../constants';
+import { RECORD_LABELS, getArtistLabel } from '../recordLabels';
 
 interface StudioViewProps {
   gameState: GameState;
@@ -66,7 +67,20 @@ function CreateSongForm({ gameState, setGameState, currentDate }: StudioViewProp
 
   const calculateCollabCost = (npc: any) => {
      // Taylor Swift is the benchmark at 450000 base points = $5,000,000
-     return Math.ceil((npc.basePoints / 450000) * 5000000);
+     let cost = Math.ceil((npc.basePoints / 450000) * 5000000);
+     
+     // Apply label discount
+     const playerLabelContract = gameState.artist?.labelContract;
+     if (playerLabelContract) {
+         const playerLabel = RECORD_LABELS.find(l => l.id === playerLabelContract.labelId);
+         const npcLabel = getArtistLabel(npc.name);
+         if (playerLabel && npcLabel && playerLabel.id === npcLabel.id) {
+             const discount = playerLabel.benefits.collabPromoCut / 100;
+             cost = Math.ceil(cost * (1 - discount));
+         }
+     }
+     
+     return cost;
   };
 
   const toggleCollab = (name: string) => {
@@ -132,6 +146,8 @@ function CreateSongForm({ gameState, setGameState, currentDate }: StudioViewProp
         finalTitle = `${title} (feat. ${selectedCollabs.join(' & ')})`;
     }
 
+    const masterOwner = gameState.artist?.labelContract?.labelId || undefined;
+
     const newSong: Song = {
       id: 'song_' + Date.now(),
       title: finalTitle,
@@ -142,6 +158,7 @@ function CreateSongForm({ gameState, setGameState, currentDate }: StudioViewProp
       streams: { spotify: 0, appleMusic: 0, amazonMusic: 0, youtubeMusic: 0, total: 0 },
       sales: { physical: 0, digital: 0, total: 0 },
       radioPlays: 0,
+      masterOwner,
       genre,
       collaborator: selectedCollabs.join(', '),
       featuredArtistCost: selectedCollabs.reduce((sum, name) => {
@@ -153,8 +170,16 @@ function CreateSongForm({ gameState, setGameState, currentDate }: StudioViewProp
 
     setGameState(prev => {
       if (!prev) return prev;
+      let newContract = prev.artist?.labelContract ? { ...prev.artist.labelContract } : null;
+      if (newContract && newContract.type === 'year' && status !== 'Vaulted') {
+         newContract.deliveredSingles += 1;
+      }
       return {
         ...prev,
+        artist: prev.artist ? {
+           ...prev.artist,
+           labelContract: newContract
+        } : prev.artist,
         stats: {
           ...prev.stats,
           money: prev.stats.money - cost
@@ -316,7 +341,7 @@ function CreateAlbumForm({ gameState, setGameState, currentDate }: StudioViewPro
   const [scheduleDays, setScheduleDays] = useState<number>(30);
 
   // Get eligible tracks (we only use Singles that are already Vaulted or Published, but usually Vaulted are used for albums before release, or maybe they can bundle existing published ones. Prompt says 'tracklist vault/released').
-  const eligibleTracks = gameState.releases.filter(r => r.type === 'Single' && (r.status === 'Vaulted' || r.status === 'Published'));
+  const eligibleTracks = (gameState.releases || []).filter(r => r.type === 'Single' && !(r as any).isNPCRelease && (r.status === 'Vaulted' || r.status === 'Published'));
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -355,6 +380,8 @@ function CreateAlbumForm({ gameState, setGameState, currentDate }: StudioViewPro
        releaseDateObj.setDate(releaseDateObj.getDate() + scheduleDays);
     }
 
+    const masterOwner = gameState.artist?.labelContract?.labelId || undefined;
+
     const newAlbum: Album = {
       id: 'album_' + Date.now(),
       title,
@@ -365,13 +392,23 @@ function CreateAlbumForm({ gameState, setGameState, currentDate }: StudioViewPro
       streams: { spotify: 0, appleMusic: 0, amazonMusic: 0, youtubeMusic: 0, total: 0 },
       sales: { physical: 0, digital: 0, total: 0 },
       radioPlays: 0,
+      masterOwner,
       trackIds: selectedTracks
     };
 
     setGameState(prev => {
       if (!prev) return prev;
+      let newContract = prev.artist?.labelContract ? { ...prev.artist.labelContract } : null;
+      if (newContract && newContract.type === 'album' && status !== 'Vaulted') {
+         if (albumType === 'Album') newContract.deliveredAlbums += 1;
+         if (albumType === 'EP') newContract.deliveredEPs += 1;
+      }
       return {
         ...prev,
+        artist: prev.artist ? {
+           ...prev.artist,
+           labelContract: newContract
+        } : prev.artist,
         releases: [...prev.releases, newAlbum]
       }
     });

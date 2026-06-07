@@ -22,6 +22,8 @@ export const LEVEL_REQUIREMENTS: Record<number, LevelRequirement> = {
 };
 
 import { ARTIST_DISCOGRAPHY } from './artistDiscography';
+import { ARTIST_IMAGES } from './artistImages';
+import { ARTIST_PICS } from './artistPics';
 
 export const NPC_ARTISTS = [
   { name: 'Taylor Swift', basePoints: 450000, type: 'Pop' },
@@ -170,78 +172,4 @@ const getNPCTitle = (seed: number, isAlbum: boolean) => {
   // Occasional single word
   if (seed % 5 === 0) return noun;
   return `${adj} ${noun}`;
-};
-
-export const generateNPCSongs = (multiplier: number = 1, seed: number = 1, excludeName: string = '') => {
-  const songs: any[] = [];
-  NPC_ARTISTS.forEach((npc, i) => {
-    if (npc.name.toLowerCase() === excludeName.toLowerCase()) return;
-    const songsToRelease = Math.min(15, 3 + Math.floor(seed / 12));
-    const disco = ARTIST_DISCOGRAPHY || {};
-    
-    for (let j = 0; j < songsToRelease; j++) {
-      // Add a long-term cycle so songs don't stay at the top forever (e.g. 5-15 weeks cycle)
-      const cycleLength = 8 + (j % 10);
-      const phase = (seed + i * 5 + j * 11) / cycleLength;
-      // cycleMod goes from 0.1 to 1.0 depending on the week
-      const cycleMod = 0.15 + 0.85 * ((Math.sin(phase) + 1) / 2);
-
-      const basePseudo = Math.floor(Math.abs(Math.sin((i + 1) * (j + 1))) * 50000);
-      const weeklyFluctuation = Math.floor(Math.abs(Math.cos(seed * (i + j + 1))) * 15000);
-      
-      const titleSeed = Math.floor(Math.abs(Math.cos(i * 10 + j) * 1000));
-      const fallbackTitle = getNPCTitle(titleSeed, false);
-      const trackDisco = disco[npc.name]?.tracks?.[j];
-      const title = trackDisco?.title || fallbackTitle;
-      const coverImage = trackDisco?.cover || null;
-      
-      songs.push({
-        id: `${npc.name}-${j}-song`,
-        title: `${title}`,
-        artist: npc.name,
-        artistGenre: npc.type,
-        coverImage,
-        points: Math.floor((npc.basePoints * 1.25 * (1 - j * 0.15) * cycleMod + basePseudo * cycleMod + weeklyFluctuation) * multiplier),
-        type: 'Single' as const,
-        isPlayer: false
-      });
-    }
-  });
-  return songs;
-};
-
-export const generateNPCAlbums = (multiplier: number = 1, seed: number = 1, excludeName: string = '') => {
-  const albums: any[] = [];
-  NPC_ARTISTS.forEach((npc, i) => {
-    if (npc.name.toLowerCase() === excludeName.toLowerCase()) return;
-    const albumsToRelease = Math.min(5, 2 + Math.floor(seed / 24));
-    const disco = ARTIST_DISCOGRAPHY || {};
-
-    for (let j = 0; j < albumsToRelease; j++) {
-      const cycleLength = 10 + (j % 8);
-      const phase = (seed + i * 4 + j * 13) / cycleLength;
-      const cycleMod = 0.2 + 0.8 * ((Math.sin(phase) + 1) / 2);
-
-      const basePseudo = Math.floor(Math.abs(Math.cos((i + 1) * (j + 1))) * 30000);
-      const weeklyFluctuation = Math.floor(Math.abs(Math.sin(seed * (i + j + 1))) * 10000);
-      
-      const titleSeed = Math.floor(Math.abs(Math.sin(i * 10 + j) * 1000));
-      const fallbackTitle = getNPCTitle(titleSeed, true);
-      const albumDisco = disco[npc.name]?.albums?.[j];
-      const title = albumDisco?.title || fallbackTitle;
-      const coverImage = albumDisco?.cover || null;
-
-      albums.push({
-        id: `${npc.name}-${j}-album`,
-        title: `${title}`,
-        artist: npc.name,
-        artistGenre: npc.type,
-        coverImage,
-        points: Math.floor((npc.basePoints * 0.8 * (1 - j * 0.2) * cycleMod + basePseudo * cycleMod + weeklyFluctuation) * multiplier),
-        type: 'Album' as const,
-        isPlayer: false
-      });
-    }
-  });
-  return albums;
 };

@@ -1,7 +1,6 @@
 import React, { useMemo } from 'react';
 import { GameState, Song } from '../types';
 import { ChevronLeft, RadioReceiver } from 'lucide-react';
-import { generateNPCSongs } from '../constants';
 import { ARTIST_IMAGES } from '../artistImages';
 
 export function RadioChart({ gameState, onBack }: { gameState: GameState, onBack: () => void }) {
@@ -9,83 +8,39 @@ export function RadioChart({ gameState, onBack }: { gameState: GameState, onBack
   currentDateObj.setDate(currentDateObj.getDate() + gameState.time.daysPassed);
   
   const chartData = useMemo(() => {
-     const publishedPlayer = gameState.releases.filter(r => r.status === 'Published' && r.type === 'Single') as Song[];
+     const publishedSongs = gameState.releases.filter(r => r.status === 'Published' && r.type === 'Single') as Song[];
      
-     const playerSongs = publishedPlayer.map(r => {
+     const songsWithRadio = publishedSongs.map(r => {
+        const isNPC = !!(r as any).isNPCRelease;
+        const rArtist = isNPC ? (r as any).artistId : (gameState.artist?.name || 'Player');
+        
         let daysSinceRelease = 1;
         if (r.releaseDate) {
            daysSinceRelease = Math.max(1, Math.floor((currentDateObj.getTime() - new Date(r.releaseDate).getTime()) / (1000 * 3600 * 24)));
         }
+
+        // Extrapolate current week's partial data to a full 7 days
+        let daysIntoWeek = gameState.time.daysPassed % 7;
+        if (daysIntoWeek === 0) daysIntoWeek = 7;
+        let weeklySpins = ((r.currentWeekRadio ?? 0) / daysIntoWeek) * 7;
         
-        // Calculate current week's estimated spins based on radioCurve from App.tsx
-        const artistLevel = gameState.artist?.level || 0;
-        const hash = r.title ? r.title.split('').reduce((a, b) => a + b.charCodeAt(0), 0) : 0;
-        const intrinsicHitFactor = (hash % 100) / 100;
-        let hitMultiplier = intrinsicHitFactor > 0.95 ? 4.5 : (intrinsicHitFactor > 0.8 ? 2.5 : (intrinsicHitFactor < 0.2 ? 0.3 : 0.8));
-        
-        const qualityMod = r.qualityModifier || 1;
-        const totalPop = gameState.popularity ? (gameState.popularity.america + gameState.popularity.latinAmerica + gameState.popularity.europe) : 0;
-        const popBoost = 1 + (totalPop / 40);
-        
-        const hitLongevity = Math.max(1, hitMultiplier);
-        
-        const peakRadioDay = 30 + (intrinsicHitFactor * 50);
-        const radioWidth = 45 + (hitLongevity * 15);
-        
-        const distance = Math.abs(daysSinceRelease - peakRadioDay);
-        const radioCurve = Math.exp(-(distance * distance) / (radioWidth * radioWidth));
-        
-        const radioMaxHit = hitMultiplier * qualityMod * (1 + artistLevel * 0.2);
-        
-        // Deterministic wobble for the chart so it doesn't flicker on re-render but changes daily
-        const wobble = (hash + gameState.time.daysPassed) % 40 / 100; // 0.0 to 0.4
-        
-        // Match App.tsx B-side logic: isBSide && <Hit (multiplier <= 2)
-        let dailyRadio = (r.isBSide && hitMultiplier <= 2) ? 0 : Math.floor(radioCurve * radioMaxHit * 10 * popBoost * (wobble + 0.8));
-        
-        // Match recurrent factor logic from App.tsx
-        if (daysSinceRelease > peakRadioDay && dailyRadio < (radioMaxHit * 2)) {
-            const recurrentFactor = (hitMultiplier > 2 ? 0.05 : 0.01) * radioMaxHit * popBoost;
-            dailyRadio = Math.max(dailyRadio, Math.floor(recurrentFactor * (wobble + 0.7)));
+        // Use last week spins if better representation (e.g. tracking week just restarted)
+        if (daysIntoWeek < 2 && r.lastWeekRadio) {
+           weeklySpins = r.lastWeekRadio;
         }
 
-        const weeklySpins = dailyRadio * 7;
-        
-        // Find Peak (when distance = 0)
-        let peakDaily = (r.isBSide && hitMultiplier <= 2) ? 0 : Math.floor(1.0 * radioMaxHit * 10 * popBoost * 1.2); // estimated max peak with wobble
-        if (peakDaily < dailyRadio) peakDaily = dailyRadio; // Should never happen unless wobble kicks it over
-        const peakSpins = peakDaily * 7;
-        
         return {
            ...r,
-           isPlayer: true,
-           artist: gameState.artist?.name || 'Player',
-           weeklySpins,
-           peakSpins: daysSinceRelease > peakRadioDay ? peakSpins : weeklySpins,
-           daysOnChart: daysSinceRelease < 14 ? 1 : Math.floor((daysSinceRelease - 14) / 7) + 1,
+           isPlayer: !isNPC,
+           artist: rArtist,
+           weeklySpins: Math.floor(weeklySpins),
+           peakSpins: Math.floor(Math.max(weeklySpins, (r.radioPlays || 0) / Math.max(1, daysSinceRelease / 7))), // Estimate
+           daysOnChart: Math.max(1, Math.floor(daysSinceRelease / 7)),
+           coverImage: r.coverImage || ARTIST_IMAGES[rArtist as string] || `https://i.pravatar.cc/200?u=${encodeURIComponent(rArtist)}`
         };
      });
      
-     const daySeed = Math.floor(gameState.time.daysPassed / 10);
-     const pName = gameState.artist?.name || '';
-     const npcSongs = generateNPCSongs(1, daySeed, pName).map((s, i) => {
-        const isHit = i % 10 === 0 ? 3.5 : (i % 3 === 0 ? 0.5 : 1.2);
-        const weeksOld = Math.max(1, (gameState.time.daysPassed % (i * 10 + 20)) / 7);
-        const distance = Math.abs(weeksOld - 6); // peak week 6
-        const curve = Math.exp(-(distance * distance) / 25);
-        
-        let daily = Math.floor((s.points / 450000) * 1200 * curve * isHit); 
-        return { 
-           ...s, 
-           isPlayer: false,
-           weeklySpins: daily * 7,
-           peakSpins: (Math.floor((s.points / 450000) * 1200 * 1.0 * isHit)) * 7,
-           daysOnChart: Math.max(1, Math.floor(weeksOld)),
-           coverImage: s.coverImage || ARTIST_IMAGES[s.artist as string] || `https://i.pravatar.cc/200?u=${encodeURIComponent(s.artist)}`
-        };
-     });
-     
-     const top50 = [...playerSongs, ...npcSongs]
+     const top50 = songsWithRadio
         .filter(s => s.weeklySpins > 10)
         .sort((a, b) => b.weeklySpins - a.weeklySpins)
         .slice(0, 50);

@@ -11,7 +11,7 @@ export const PlaquesView = ({ gameState }: PlaquesViewProps) => {
     const list: { release: Release; platform: string; streams: number }[] = [];
     const target = 1_000_000_000;
 
-    gameState.releases.forEach(release => {
+    (gameState.releases || []).filter(r => !(r as any).isNPCRelease).forEach(release => {
       if (release.status !== 'Published') return;
 
       if (release.streams?.spotify >= target) list.push({ release, platform: 'Spotify', streams: release.streams.spotify });

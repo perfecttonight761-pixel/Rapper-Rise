@@ -41,7 +41,7 @@ export function DashboardView({
     const events: { date: Date; title: string; type: 'release' | 'gig'; obj: any }[] = [];
     
     // Scheduled releases
-    gameState.releases.filter(r => r.status === 'Scheduled' && r.releaseDate).forEach(r => {
+    (gameState.releases || []).filter(r => r.status === 'Scheduled' && r.releaseDate && !(r as any).isNPCRelease).forEach(r => {
       events.push({
         date: new Date(r.releaseDate!),
         title: `Release: ${r.title}`,
@@ -526,6 +526,133 @@ export function DashboardView({
                                              <button onClick={() => handleRejectCollab(email.id)} className="px-6 py-2 bg-white/10 hover:bg-white/20 rounded-lg font-bold text-sm transition-colors text-white">Reject</button>
                                          </div>
                                      </div>
+                                 </div>
+                             )}
+                             {email.contractOffer && email.contractOffer.status === 'pending' && (
+                                 <div className="mt-8 border border-white/10 rounded-3xl p-6 bg-gradient-to-b from-blue-900/40 to-[#050507] flex flex-col gap-6 relative overflow-hidden">
+                                     <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full blur-[50px]"></div>
+                                     <h3 className="font-black text-2xl uppercase tracking-tighter italic text-blue-400">RECORDING CONTRACT</h3>
+                                     
+                                     <div className="grid grid-cols-2 gap-4">
+                                        <div className="bg-black/50 border border-white/5 p-4 rounded-xl">
+                                            <div className="text-[10px] text-white/40 tracking-widest uppercase mb-1">Contract Type</div>
+                                            <div className="font-bold">{email.contractOffer.type === 'album' ? 'Multi-Album Deal' : 'Term Deal (Years)'}</div>
+                                        </div>
+                                        <div className="bg-black/50 border border-white/5 p-4 rounded-xl">
+                                            <div className="text-[10px] text-white/40 tracking-widest uppercase mb-1">Duration / Obligation</div>
+                                            <div className="font-bold text-lg">{email.contractOffer.type === 'album' ? `${email.contractOffer.requiredAlbums} Albums` : `${email.contractOffer.duration} Years`}</div>
+                                            {(email.contractOffer.requiredSingles || 0) > 0 && <div className="text-xs text-white/60">Must deliver {email.contractOffer.requiredSingles} Singles</div>}
+                                        </div>
+                                        <div className="bg-black/50 border border-white/5 p-4 rounded-xl">
+                                            <div className="text-[10px] text-white/40 tracking-widest uppercase mb-1">Advance Payment</div>
+                                            <div className="font-black text-green-400 text-xl font-mono">${email.contractOffer.advanceMoney?.toLocaleString()}</div>
+                                        </div>
+                                        <div className="bg-black/50 border border-white/5 p-4 rounded-xl">
+                                            <div className="text-[10px] text-white/40 tracking-widest uppercase mb-1">Label Royalty Cut</div>
+                                            <div className="font-black text-red-400 text-xl font-mono">{email.contractOffer.royaltyCut}%</div>
+                                        </div>
+                                     </div>
+
+                                     <div className="bg-blue-500/10 p-4 rounded-xl text-sm text-blue-200">
+                                         <strong className="text-blue-300">Recoupment Note:</strong> The advance payment of ${email.contractOffer.advanceMoney?.toLocaleString()} is a 100% recoupable debt. You will not earn royalties from this label until the advance has been paid back in full from your share of revenue.
+                                     </div>
+
+                                     <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-white/10">
+                                         <button onClick={() => {
+                                             
+                                                const currentDateObj = new Date(gameState!.time.startDate);
+                                                currentDateObj.setDate(currentDateObj.getDate() + gameState!.time.daysPassed);
+                                                
+                                                setGameState(prev => {
+                                                    if (!prev) return prev;
+                                                    let emails = [...(prev.emails || [])];
+                                                    const idx = emails.findIndex(e => e.id === email.id);
+                                                    if (idx > -1) {
+                                                        emails[idx] = { ...emails[idx], contractOffer: { ...emails[idx].contractOffer!, status: 'accepted' } };
+                                                    }
+                                                    return {
+                                                        ...prev,
+                                                        emails,
+                                                        artist: {
+                                                            ...prev.artist!,
+                                                            labelContract: {
+                                                                labelId: email.contractOffer!.labelId,
+                                                                type: email.contractOffer!.type as 'album' | 'year',
+                                                                duration: email.contractOffer!.duration as number,
+                                                                requiredAlbums: email.contractOffer!.requiredAlbums as number,
+                                                                requiredEPs: email.contractOffer!.requiredEPs as number,
+                                                                requiredSingles: email.contractOffer!.requiredSingles as number,
+                                                                deliveredAlbums: 0,
+                                                                deliveredEPs: 0,
+                                                                deliveredSingles: 0,
+                                                                advanceMoney: email.contractOffer!.advanceMoney as number,
+                                                                unrecoupedBalance: email.contractOffer!.advanceMoney as number, // Full advance must be recouped
+                                                                royaltyCut: email.contractOffer!.royaltyCut as number,
+                                                                revenueGeneratedForLabel: 0,
+                                                                signedDate: currentDateObj.toISOString()
+                                                            }
+                                                        },
+                                                        stats: {
+                                                            ...prev.stats,
+                                                            money: prev.stats.money + (email.contractOffer?.advanceMoney || 0)
+                                                        }
+                                                    }
+                                                });
+                                                
+                                                
+                                         }} className="flex-1 py-4 bg-white hover:bg-gray-200 text-black rounded-xl font-black text-lg transition-colors shadow-lg">Sign Contract</button>
+                                         <button onClick={() => {
+                                              
+                                                  setGameState(prev => {
+                                                      if (!prev) return prev;
+                                                      let emails = [...(prev.emails || [])];
+                                                      const idx = emails.findIndex(e => e.id === email.id);
+                                                      
+                                                      if (idx > -1) {
+                                                          const success = Math.random() > 0.3; // 70% chance of success
+                                                          if (success) {
+                                                              const oldOffer = emails[idx].contractOffer!;
+                                                              emails[idx] = { 
+                                                                  ...emails[idx], 
+                                                                  subject: `(Renegotiated) ${emails[idx].subject}`,
+                                                                  body: `We respect the hustle. We've updated the contract with better terms for you.\n\nTake a look and let us know.`,
+                                                                  contractOffer: { 
+                                                                    ...oldOffer, 
+                                                                    royaltyCut: Math.max(10, oldOffer.royaltyCut - (Math.floor(Math.random() * 10) + 5)),
+                                                                    advanceMoney: oldOffer.advanceMoney! + Math.floor(Math.random() * 50000)
+                                                                  } 
+                                                              };
+                                                              
+                                                          } else {
+                                                              emails[idx] = { 
+                                                                  ...emails[idx], 
+                                                                  contractOffer: { ...emails[idx].contractOffer!, status: 'rejected' },
+                                                                  body: "We couldn't reach an agreement on the terms. We are pulling our offer. Best of luck.",
+                                                              };
+                                                              
+                                                          }
+                                                      }
+                                                      
+                                                      return { ...prev, emails };
+                                                  });
+                                              }} className="px-6 py-4 bg-purple-600 hover:bg-purple-500 text-white rounded-xl font-bold transition-colors">Negotiate</button>
+                                         <button onClick={() => {
+                                             setGameState(prev => {
+                                                 if (!prev) return prev;
+                                                 let emails = [...(prev.emails || [])];
+                                                 const idx = emails.findIndex(e => e.id === email.id);
+                                                 if (idx > -1) {
+                                                     emails[idx] = { ...emails[idx], contractOffer: { ...emails[idx].contractOffer!, status: 'rejected' } };
+                                                 }
+                                                 return { ...prev, emails };
+                                             });
+                                         }} className="px-6 py-4 bg-red-500/20 hover:bg-red-500/30 text-red-500 rounded-xl font-bold transition-colors">Decline Deal</button>
+                                     </div>
+                                 </div>
+                             )}
+                             {email.contractOffer && email.contractOffer.status !== 'pending' && (
+                                 <div className="mt-8 p-4 text-center rounded-xl bg-white/5 border border-white/10 text-white/50 text-sm italic">
+                                     You have {email.contractOffer.status} this recording contract.
                                  </div>
                              )}
                              {email.collabOffer && email.collabOffer.status !== 'pending' && (

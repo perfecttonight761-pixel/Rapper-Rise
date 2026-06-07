@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { GameState, Release, Album } from '../types';
+import { GameState, Release, Album, Song } from '../types';
 import { Music, Disc, BarChart3, Calendar } from 'lucide-react';
 import { AlbumCardView } from './AlbumCardView';
 import { ReleaseStatsPopup } from './ReleaseStatsPopup';
@@ -12,7 +12,7 @@ interface DiscographyViewProps {
 }
 
 export function DiscographyView({ gameState, setGameState, currentDate }: DiscographyViewProps) {
-  const releases = gameState.releases || [];
+  const releases = (gameState.releases || []).filter(r => !(r as any).isNPCRelease);
   const [selectedAlbum, setSelectedAlbum] = useState<Album | null>(null);
   const [deluxeFormAlbum, setDeluxeFormAlbum] = useState<Album | null>(null);
   const [statsPopupRelease, setStatsPopupRelease] = useState<Release | null>(null);
@@ -134,7 +134,7 @@ export function DiscographyView({ gameState, setGameState, currentDate }: Discog
       )}
 
       {statsPopupRelease && (
-        <ReleaseStatsPopup release={statsPopupRelease} gameState={gameState} onClose={() => setStatsPopupRelease(null)} />
+        <ReleaseStatsPopup release={statsPopupRelease} gameState={gameState} setGameState={setGameState} onClose={() => setStatsPopupRelease(null)} />
       )}
 
       {showAlbumSalesChart && (
@@ -231,7 +231,7 @@ function ReleaseDeluxeForm({ album, gameState, setGameState, currentDate, onClos
   const [selectedTracks, setSelectedTracks] = useState<string[]>([]);
   const [scheduleDays, setScheduleDays] = useState<number>(30);
 
-  const eligibleTracks = gameState.releases.filter(r => r.type === 'Single' && (r.status === 'Vaulted' || r.status === 'Published') && !album.trackIds.includes(r.id));
+  const eligibleTracks = gameState.releases.filter(r => r.type === 'Single' && !(r as any).isNPCRelease && (r.status === 'Vaulted' || r.status === 'Published') && !album.trackIds.includes(r.id));
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

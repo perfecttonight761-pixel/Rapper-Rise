@@ -8,7 +8,7 @@ interface AlbumSalesChartProps {
 }
 
 export function AlbumSalesChart({ gameState, onClose }: AlbumSalesChartProps) {
-  const albums = (gameState.releases || [])
+  const albums = (gameState.releases || []).filter(r => !(r as any).isNPCRelease)
     .filter(r => r.type === 'Album' && r.status === 'Published') as Album[];
 
   const albumData = albums.map(album => {

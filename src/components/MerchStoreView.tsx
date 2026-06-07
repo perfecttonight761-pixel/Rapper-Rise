@@ -117,9 +117,6 @@ export function MerchStoreView({ gameState, setGameState }: MerchStoreViewProps)
   };
 
   const handleDeleteMerch = (merchId: string) => {
-     const isConfirmed = window.confirm("Are you sure you want to delete this merch?");
-     if (!isConfirmed) return;
-     
      setGameState(prev => {
         if (!prev) return prev;
         return {
@@ -174,11 +171,17 @@ export function MerchStoreView({ gameState, setGameState }: MerchStoreViewProps)
                         <label className="block text-xs font-bold uppercase tracking-widest text-white/50 mb-2">Linked Release</label>
                         <select 
                            value={linkedRelease}
-                           onChange={e => setLinkedRelease(e.target.value)}
+                           onChange={e => {
+                              setLinkedRelease(e.target.value);
+                              const rel = gameState.releases.find(r => r.id === e.target.value);
+                              if (rel && rel.coverImage) {
+                                 setMerchImage(rel.coverImage);
+                              }
+                           }}
                            className="w-full bg-[#111] border border-white/10 rounded-xl px-4 py-3 text-white focus:border-purple-500 outline-none appearance-none"
                         >
                            <option value="">-- Select Release --</option>
-                           {gameState.releases.map(r => (
+                           {gameState.releases.filter(r => !(r as any).isNPCRelease && ['Album', 'EP', 'Single Pack', 'Deluxe Album'].includes(r.type)).map(r => (
                               <option key={r.id} value={r.id}>{r.title} ({r.type}) - {r.status}</option>
                            ))}
                         </select>
@@ -245,8 +248,8 @@ export function MerchStoreView({ gameState, setGameState }: MerchStoreViewProps)
 
                   <div className="flex flex-col gap-4">
                      <div>
-                        <label className="block text-xs font-bold uppercase tracking-widest text-white/50 mb-2">Preview & Upload (Click to change)</label>
-                        <label className="w-full aspect-square bg-[#0f0f0f] border border-white/10 rounded-2xl flex flex-col items-center justify-center cursor-pointer hover:border-purple-500 transition-colors overflow-hidden group relative">
+                        <label className="block text-xs font-bold uppercase tracking-widest text-white/50 mb-2">Cover Art (Auto-syncs with Release)</label>
+                        <div className="w-full aspect-square bg-[#0f0f0f] border border-white/10 rounded-2xl flex flex-col items-center justify-center overflow-hidden relative">
                            {merchImage ? (
                               <div className="absolute inset-0 flex flex-col justify-center items-center bg-[#151515]">
                                  <div className="absolute top-4 left-4 z-10 flex flex-col items-start bg-black/40 p-2 rounded backdrop-blur">
@@ -255,7 +258,7 @@ export function MerchStoreView({ gameState, setGameState }: MerchStoreViewProps)
                                  </div>
                                  <div className="relative mt-8 mx-auto w-3/4 aspect-square flex items-center justify-center">
                                      <div 
-                                       className="absolute top-[5%] right-[-20%] w-[90%] h-[90%] rounded-full shadow-2xl transition-transform duration-500 group-hover:translate-x-4 border border-black/20 z-0"
+                                       className="absolute top-[5%] right-[-20%] w-[90%] h-[90%] rounded-full shadow-2xl transition-transform duration-500 border border-black/20 z-0"
                                        style={{ background: `linear-gradient(135deg, ${merchColor}, #111)` }}
                                      >
                                         <div className="absolute inset-0 flex justify-center items-center"><div className="w-1/4 h-1/4 rounded-full bg-white/20 border-4 border-[#111]"></div></div>
@@ -277,17 +280,10 @@ export function MerchStoreView({ gameState, setGameState }: MerchStoreViewProps)
                            ) : (
                               <>
                                  <ImageIcon className="w-10 h-10 text-white/20 mb-2" />
-                                 <span className="text-white/40 text-sm font-bold uppercase tracking-widest">Upload Cover</span>
+                                 <span className="text-white/40 text-sm font-bold uppercase tracking-widest">Select a Release</span>
                               </>
                            )}
-                           <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
-                           
-                           {merchImage && (
-                               <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-50">
-                                   <span className="bg-white text-black px-4 py-2 rounded-full font-bold uppercase tracking-widest text-xs shadow-xl">Change Image</span>
-                               </div>
-                           )}
-                        </label>
+                        </div>
                      </div>
 
                      <div className="bg-purple-600/10 border border-purple-500/20 rounded-xl p-4 mt-auto">

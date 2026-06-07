@@ -172,7 +172,7 @@ export function XView({ gameState, setGameState, onClose }: XViewProps) {
     currentDate.setDate(currentDate.getDate() + gameState.time.daysPassed);
     
     // Recent release reaction
-    const latestRelease = gameState.releases.filter(r => r.status === 'Published').pop();
+    const latestRelease = gameState.releases.filter(r => !(r as any).isNPCRelease && r.status === 'Published').pop();
     if (latestRelease) {
       const isGood = (latestRelease as any).qualityModifier ? (latestRelease as any).qualityModifier > 1 : true;
       generatedTweets.push({
@@ -190,8 +190,8 @@ export function XView({ gameState, setGameState, onClose }: XViewProps) {
 
       const releaseDateTime = latestRelease.releaseDate ? new Date(latestRelease.releaseDate).getTime() : new Date(gameState.time.startDate).getTime();
       const daysSinceRelease = Math.max(0, Math.floor((currentDate.getTime() - releaseDateTime) / (1000 * 3600 * 24)));
-      const dailyAvgGlobal = latestRelease.lastDailyStreams?.total || Math.floor((latestRelease.streams.total || 0) / Math.max(1, daysSinceRelease));
-      const dailyAvgSpotify = latestRelease.lastDailyStreams?.spotify || Math.floor((latestRelease.streams.spotify || 0) / Math.max(1, daysSinceRelease));
+      const dailyAvgGlobal = latestRelease.lastDailyStreams?.total || Math.floor(((latestRelease.streams?.total || 0) || 0) / Math.max(1, daysSinceRelease));
+      const dailyAvgSpotify = latestRelease.lastDailyStreams?.spotify || Math.floor(((latestRelease.streams?.spotify || 0) || 0) / Math.max(1, daysSinceRelease));
 
       // Debut Streams & Sales Tweet
       if (latestRelease.debutStreams && daysSinceRelease <= 2) {
@@ -235,7 +235,7 @@ Sold in each region:
          generatedTweets.push({
             id: '1.5',
             author: { name: 'Pop Crave', handle: '@PopCrave', verified: 'gold', avatar: 'P' },
-            content: `📊 "${latestRelease.title}" by ${playerHandle} has crossed ${latestRelease.streams?.total.toLocaleString()} streams on global platforms!`,
+            content: `📊 "${latestRelease.title}" by ${playerHandle} has crossed ${(latestRelease.streams?.total || 0).toLocaleString()} streams on global platforms!`,
             likes: Math.floor(followerCount * 0.05) + 500,
             retweets: Math.floor(followerCount * 0.01) + 120,
             replies: Math.floor(followerCount * 0.002) + 20,
@@ -257,7 +257,7 @@ Sold in each region:
               artist={playerName}
               dailyStreams={Math.floor(dailyAvgSpotify * (1 + (Math.random() * 0.2)))}
               changePercent="+7.96%"
-              totalStreams={latestRelease.streams.spotify}
+              totalStreams={(latestRelease.streams?.spotify || 0)}
          />,
          likes: Math.floor(followerCount * 0.03) + 200,
          retweets: Math.floor(followerCount * 0.01) + 40,
@@ -272,7 +272,7 @@ Sold in each region:
             id: '1.8',
             author: { name: 'Spotify Daily Data', handle: '@spotifydata', verified: 'gold', avatar: 'S' },
             content: `Tracker for "${latestRelease.title}" by ${playerName} on Spotify:`,
-            media: <AlbumTrackerMedia album={latestRelease} playerName={playerName} currentDate={currentDate} tracks={gameState.releases.filter(r => (latestRelease as Album).trackIds.includes(r.id)) as Song[]} />,
+            media: <AlbumTrackerMedia album={latestRelease} playerName={playerName} currentDate={currentDate} tracks={gameState.releases.filter(r => !(r as any).isNPCRelease && (latestRelease as Album).trackIds.includes(r.id)) as Song[]} />,
             likes: Math.floor(followerCount * 0.02) + 200,
             retweets: Math.floor(followerCount * 0.008) + 50,
             replies: 10,
@@ -380,7 +380,7 @@ Sold in each region:
 
     // 1. Debuts and milestones
      let potentialCertTweets: any[] = [];
-    gameState.releases.filter(r => r.status === 'Published').forEach((release, i) => {
+    gameState.releases.filter(r => !(r as any).isNPCRelease && r.status === 'Published').forEach((release, i) => {
        const releaseDateTime = release.releaseDate ? new Date(release.releaseDate).getTime() : new Date(gameState.time.startDate).getTime();
        const daysSinceRelease = Math.max(0, Math.floor((currentDate.getTime() - releaseDateTime) / (1000 * 3600 * 24)));
        const isAlbum = release.type === 'Album';
@@ -529,7 +529,7 @@ Sold in each region:
     // --- Additional Variety Feed Types ---
     
     // Tour Fan
-    const activeTour = gameState.tours?.find(t => !t.completed);
+    const activeTour = gameState.tours?.find(t => t.status !== 'Completed');
     if (activeTour) {
       generatedTweets.push({
         id: '2.1',
@@ -587,7 +587,7 @@ Sold in each region:
       generatedTweets.push({
         id: '2.5',
         author: { name: 'local live music', handle: '@locallive', verified: 'none', avatar: 'L' },
-        content: `saw ${playerName} perform at ${lastGig.venue} ${lastGig.city ? 'in ' + lastGig.city : ''}... honestly incredible stage presence. totally worth it.`,
+        content: `saw ${playerName} perform at ${lastGig.name} in ${lastGig.region}... honestly incredible stage presence. totally worth it.`,
         likes: 120,
         retweets: 15,
         replies: 4,
