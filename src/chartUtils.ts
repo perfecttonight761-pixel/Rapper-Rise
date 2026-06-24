@@ -1,37 +1,30 @@
 import { GameState } from './types';
 import { ARTIST_IMAGES } from './artistImages';
 
-export const computeCharts = (gameState: GameState) => {
+export const computeCharts = (gameState: GameState, previousChartsData?: any) => {
     const today = new Date(gameState.time.startDate);
     today.setDate(today.getDate() + gameState.time.daysPassed);
     
     // Simulate updating once a week
     const currentWeekNumber = Math.max(1, Math.floor(gameState.time.daysPassed / 7)); 
-    const previousWeekNumber = Math.max(1, currentWeekNumber - 1);
-
-    const currentWeekFluctuation = 1 + (Math.sin(currentWeekNumber / 10) * 0.05);
-    const prevWeekFluctuation = 1 + (Math.sin(previousWeekNumber / 10) * 0.05);
     
     const pName = gameState.artist?.name || '';
-    // Removing dynamic generation since they are in gameState.releases
-    // Player and NPC are treated equally below!
 
     const publishedReleases = gameState.releases.filter(r => r.status === 'Published' && r.releaseDate);
 
-    const generatePlayerItems = (isPrevWeek: boolean) => {
+    const generatePlayerItems = () => {
       return publishedReleases.map(r => {
         const isNPC = !!(r as any).isNPCRelease;
         const rArtist = isNPC ? (r as any).artistId : gameState.artist?.name;
 
-        // Extrapolate current week's partial data to a full 7 days so it stays competitive with NPCs
-        let daysIntoWeek = gameState.time.daysPassed % 7;
-        if (daysIntoWeek === 0) daysIntoWeek = 7;
+        // Use lastWeekStreams because computeCharts is called exactly when the week completes and currentWeekStreams is reset
+        let weeklyStreams = r.lastWeekStreams ?? 0;
+        let weeklySales = r.lastWeekSales ?? 0;
+        let weeklyRadio = r.lastWeekRadio ?? 0;
 
-        let weeklyStreams = isPrevWeek ? (r.lastWeekStreams ?? 0) : ((r.currentWeekStreams ?? 0) / daysIntoWeek) * 7;
-        let weeklySales = isPrevWeek ? (r.lastWeekSales ?? 0) : ((r.currentWeekSales ?? 0) / daysIntoWeek) * 7;
-        let weeklyRadio = isPrevWeek ? (r.lastWeekRadio ?? 0) : ((r.currentWeekRadio ?? 0) / daysIntoWeek) * 7;
-
-        if (!isPrevWeek && (!r.currentWeekStreams || r.currentWeekStreams === 0) && r.lastDailyStreams?.total) {
+        // If it's a completely new release with 0 streams, fallback to lastDailyStreams extrapolated
+        // so it can debut on its first week properly
+        if ((!r.lastWeekStreams || r.lastWeekStreams === 0) && r.lastDailyStreams?.total) {
              weeklyStreams = r.lastDailyStreams.total * 7;
              weeklySales = r.sales?.total || 0;
              weeklyRadio = r.currentWeekRadio || 0;
@@ -91,46 +84,7 @@ export const computeCharts = (gameState: GameState) => {
         };
       });
     };
-
-    const playerItems = generatePlayerItems(false);
-    const playerItemsPrev = generatePlayerItems(true);
-
-    const npcItemsObj = (items: any[], weekNum: number) => {
-        return items.map((npc) => {
-            const genre = npc.artistGenre || 'Pop';
-            const isLatin = genre === 'Latin';
-            const isKpop = genre === 'Kpop';
-            const isEuro = genre === 'Pop' && (npc.artist === 'Dua Lipa' || npc.artist === 'Ed Sheeran' || npc.artist === 'Adele');
-            const isCountry = genre === 'Country';
-            
-            let popAm = isLatin ? 0.2 : isKpop ? 0.3 : isEuro ? 0.3 : isCountry ? 0.9 : 0.6;
-            let popLat = isLatin ? 0.8 : isKpop ? 0.2 : isEuro ? 0.1 : isCountry ? 0.05 : 0.2;
-            let popEur = isLatin ? 0.2 : isKpop ? 0.3 : isEuro ? 0.8 : isCountry ? 0.05 : 0.4;
-
-            const reEntryHash = (npc.id.charCodeAt(0) + npc.artist.charCodeAt(0) + weekNum) % 15;
-            const isReEntry = reEntryHash === 0;
-
-            return {
-                id: npc.id,
-                title: npc.title,
-                artist: npc.artist,
-                type: npc.type,
-                isPlayer: false,
-                coverImage: npc.coverImage || ARTIST_IMAGES[npc.artist as string] || `https://i.pravatar.cc/200?u=${encodeURIComponent(npc.artist)}`,
-                points: npc.points * 1.1,
-                computedTotal: npc.points * 1.1,
-                activity: npc.points * 1.2 * 1.1,
-                albums: npc.type === 'Album' ? npc.points * 0.35 * 1.1 : 0,
-                isReEntrySim: isReEntry,
-                regionalPoints: {
-                    america: npc.points * popAm * 1.1,
-                    latinAmerica: npc.points * popLat * 1.1,
-                    europe: npc.points * popEur * 1.1,
-                    global: npc.points * 1.1
-                }
-            };
-        });
-    };
+    const playerItems = generatePlayerItems();
 
     const getFullCharts = (pItems: any[]) => {
        const allS = pItems.filter((p: any) => p.type === 'Single');
@@ -146,7 +100,9 @@ export const computeCharts = (gameState: GameState) => {
     };
 
     const currentCharts = getFullCharts(playerItems);
-    const previousCharts = getFullCharts(playerItemsPrev);
+    const previousCharts = previousChartsData || {
+       Hot100: [], Global200Single: [], Global200Album: [], RegionAmerica: [], RegionLatinAmerica: [], RegionEurope: []
+    };
 
     const chartsWithMovement: Record<keyof ReturnType<typeof getFullCharts>, any[]> = {} as any;
     

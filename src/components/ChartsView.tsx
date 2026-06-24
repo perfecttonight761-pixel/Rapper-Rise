@@ -22,6 +22,11 @@ export function ChartsView({ gameState, onClose }: ChartsViewProps) {
 
   // Chart Logic
   const chartsData = useMemo(() => {
+     if (gameState.lastComputedCharts) {
+        const today = new Date(gameState.time.startDate);
+        today.setDate(today.getDate() + gameState.time.daysPassed);
+        return { charts: gameState.lastComputedCharts, today };
+     }
      return computeCharts(gameState);
   }, [gameState]);
 

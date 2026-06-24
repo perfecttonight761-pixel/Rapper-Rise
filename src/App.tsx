@@ -1748,6 +1748,8 @@ export default function App() {
            }
         }
 
+        let newLastComputedCharts = prev.lastComputedCharts;
+
         if (reachedNextWeek) {
           const intermediateGameState = { 
               ...prev, 
@@ -1759,7 +1761,8 @@ export default function App() {
                  europe: newEuropePop
               }
           };
-          const { charts } = computeCharts(intermediateGameState);
+          const { charts } = computeCharts(intermediateGameState, prev.lastComputedCharts);
+          newLastComputedCharts = charts;
           
           updatedReleasesWithSales = updatedReleasesWithSales.map(r => {
             let newChartHistory = r.chartHistory ? JSON.parse(JSON.stringify(r.chartHistory)) : {};
@@ -2132,7 +2135,8 @@ Top Generating Song:
           grammys: nextGrammys,
           wrappedHistory: newWrappedHistory,
           emails: newEmails,
-          news: newNews
+          news: newNews,
+          lastComputedCharts: newLastComputedCharts
         };
       });
 
@@ -2276,7 +2280,7 @@ Top Generating Song:
         });
     });
 
-    setGameState({
+    const initialState: GameState = {
       version: 1,
       artist: {
         ...artistData,
@@ -2356,7 +2360,12 @@ Top Generating Song:
         results: [],
         history: []
       }
-    });
+    };
+    
+    const { charts } = computeCharts(initialState);
+    initialState.lastComputedCharts = charts;
+    
+    setGameState(initialState);
     setScreen('dashboard');
   };
 

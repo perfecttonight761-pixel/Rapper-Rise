@@ -264,6 +264,7 @@ export interface GameState {
     currentMonthTourRev?: number;
     currentMonthSongRev?: Record<string, number>;
   };
+  lastComputedCharts?: any;
   scheduledReleases: ReleaseSchedule[];
   userPreSaves: string[];
   npcStats?: Record<string, {
