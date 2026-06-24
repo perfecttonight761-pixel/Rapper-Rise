@@ -710,16 +710,16 @@ export default function App() {
             let currentTrend: any = 'Non-Hit';
 
             // Tier Definitions
-            let isMegaHitBig = baseHitFactor >= 0.999 && intrinsicHitFactor >= 0.98;
-            let isMegaHitMedium = !isMegaHitBig && baseHitFactor >= 0.998 && intrinsicHitFactor >= 0.96;
-            let isMegaHit = !isMegaHitBig && !isMegaHitMedium && baseHitFactor >= 0.996 && intrinsicHitFactor >= 0.94;
+            let isMegaHitBig = baseHitFactor >= 0.992 && intrinsicHitFactor >= 0.96;
+            let isMegaHitMedium = !isMegaHitBig && baseHitFactor >= 0.985 && intrinsicHitFactor >= 0.93;
+            let isMegaHit = !isMegaHitBig && !isMegaHitMedium && baseHitFactor >= 0.975 && intrinsicHitFactor >= 0.90;
             
-            let isHitBig = !isMegaHitBig && !isMegaHitMedium && !isMegaHit && baseHitFactor >= 0.97 && intrinsicHitFactor >= 0.91;
-            let isHitMedium = !isHitBig && !isMegaHitBig && !isMegaHitMedium && !isMegaHit && baseHitFactor >= 0.92 && intrinsicHitFactor >= 0.88;
-            let isHit = !isHitBig && !isHitMedium && !isMegaHitBig && !isMegaHitMedium && !isMegaHit && baseHitFactor >= 0.85 && intrinsicHitFactor > 0.85;
+            let isHitBig = !isMegaHitBig && !isMegaHitMedium && !isMegaHit && baseHitFactor >= 0.94 && intrinsicHitFactor >= 0.86;
+            let isHitMedium = !isHitBig && !isMegaHitBig && !isMegaHitMedium && !isMegaHit && baseHitFactor >= 0.88 && intrinsicHitFactor >= 0.80;
+            let isHit = !isHitBig && !isHitMedium && !isMegaHitBig && !isMegaHitMedium && !isMegaHit && baseHitFactor >= 0.78 && intrinsicHitFactor > 0.75;
 
-            let isNonHitBig = !isHit && !isHitMedium && !isHitBig && !isMegaHit && !isMegaHitMedium && !isMegaHitBig && intrinsicHitFactor >= 0.75;
-            let isNonHitMedium = !isNonHitBig && !isHit && !isHitMedium && !isHitBig && !isMegaHit && !isMegaHitMedium && !isMegaHitBig && intrinsicHitFactor >= 0.50;
+            let isNonHitBig = !isHit && !isHitMedium && !isHitBig && !isMegaHit && !isMegaHitMedium && !isMegaHitBig && intrinsicHitFactor >= 0.65;
+            let isNonHitMedium = !isNonHitBig && !isHit && !isHitMedium && !isHitBig && !isMegaHit && !isMegaHitMedium && !isMegaHitBig && intrinsicHitFactor >= 0.45;
 
             // TikTok Overrides
             const tkSound = updatedTikTok?.sounds.find(s => s.songId === release.id);
@@ -774,28 +774,28 @@ export default function App() {
                
                const bSideViralChance = (hash % 100) / 100; // 0 to 0.99
                // Nerf: B-Sides are much harder to become hits depending on their tier
-               if (isMegaHitBig && bSideViralChance > 0.96) {
+               if (isMegaHitBig && bSideViralChance > 0.85) {
                    hitMultiplier = Math.max(hitMultiplier, 5.0 + (intrinsicHitFactor * 3.0)); 
                    currentTrend = 'Mega Hit Big';
-               } else if (isMegaHitMedium && bSideViralChance > 0.94) {
+               } else if (isMegaHitMedium && bSideViralChance > 0.80) {
                    hitMultiplier = Math.max(hitMultiplier, 4.2 + (intrinsicHitFactor * 2.5)); 
                    currentTrend = 'Mega Hit Medium';
-               } else if (isMegaHit && bSideViralChance > 0.90) {
+               } else if (isMegaHit && bSideViralChance > 0.75) {
                    hitMultiplier = Math.max(hitMultiplier, 3.5 + (intrinsicHitFactor * 2.0)); 
                    currentTrend = 'Mega Hit';
-               } else if (isHitBig && bSideViralChance > 0.86) {
+               } else if (isHitBig && bSideViralChance > 0.70) {
                    hitMultiplier = Math.max(hitMultiplier, 2.7 + (intrinsicHitFactor * 1.5)); 
                    currentTrend = 'Hit Big';
-               } else if (isHitMedium && bSideViralChance > 0.83) {
+               } else if (isHitMedium && bSideViralChance > 0.65) {
                    hitMultiplier = Math.max(hitMultiplier, 2.3 + (intrinsicHitFactor * 1.2)); 
                    currentTrend = 'Hit Medium';
-               } else if (isHit && bSideViralChance > 0.80) {
+               } else if (isHit && bSideViralChance > 0.60) {
                    hitMultiplier = Math.max(hitMultiplier, 2.0 + (intrinsicHitFactor * 1.0)); 
                    currentTrend = 'Hit';
-               } else if (tkSound?.trendingStatus === 'TikTok Trend' && bSideViralChance > 0.60) {
+               } else if (tkSound?.trendingStatus === 'TikTok Trend' && bSideViralChance > 0.40) {
                    hitMultiplier = Math.max(hitMultiplier, 1.5 + (intrinsicHitFactor * 0.5));
                    currentTrend = 'TikTok Trend';
-               } else if (isNonHitBig && bSideViralChance > 0.50) {
+               } else if (isNonHitBig && bSideViralChance > 0.35) {
                    hitMultiplier = Math.max(hitMultiplier, 1.3 + (intrinsicHitFactor * 0.4));
                    currentTrend = 'Non-Hit Big';
                } else if (isNonHitMedium && bSideViralChance > 0.30) {
